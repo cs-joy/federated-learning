@@ -2,3 +2,4 @@
 - [Google Cloud](https://www.youtube.com/watch?v=X8YYWunttOY)
 - [Tensorflow](https://www.youtube.com/watch?v=89BGjQYA0uE)
 - [prediction models for mobile keyboards](https://arxiv.org/abs/1811.03604)
+- [TFF Tutorials](https://www.tensorflow.org/federated/tutorials/federated_learning_for_image_classification)
