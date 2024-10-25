@@ -15,6 +15,87 @@ from multiprocessing import Process
 logger = logging.getLogger(__name__)
 
 
+
+###########################
+#       tqdm add-on       #
+###########################
+class TqdmToLogger(tqdm):
+    def __init__(self, *args, logger=None,
+        min_interval = 0.1,
+        bar_format = '{desc:<}{percentage: 3.0f}% |{bar: 20}| [{n_fmt: 6s}/{total_fmt}]',
+        desc = None,
+        **kwargs
+    ):
+        self._logger = logger
+        super().__init__(*args, mininterval=min_interval, bar_format=bar_format, desc=desc, **kwargs)
+    
+    @property
+    def logger(self):
+        if self._logger is not None:
+            return self._logger
+        return logger
+    
+    def display(self, msg=None, pos= None):
+        if not self.n:
+            return
+        if not msg:
+            msg = self.__str__()
+        self.logger.info('%s', msg.strip('\r\n\t '))
+
+
+##########################
+#  Weight Initialization #
+##########################
+def init_weights(model, init_type, init_gain):
+    """
+    Initialize network weights.
+
+    Args:
+        model (torch.nn.Module): network to be initialized
+        init_type (string): the name of an initialization method: normal | xavier | xavier_uniform | kaiming | truncnorm | orthogonal | none
+        init_gain (float): scaling factor for normal, xavier and orthogonal
+    
+    Returns:
+        model (torch.nn.Module): initialized model with `init_type` and `init_gain`
+    """
+    def init_func(m):   # define the initializtion function
+        class_name = m.__class__.__name__
+        if class_name.find('BatchNorm2d') != -1:
+            if hasattr(m, 'weight') and m.weight is not None:
+                torch.nn.init.normal_(m.weight.data, mean= 1.0, std= init_gain)
+
+            if hasattr(m, 'bias') and m.bias is not None:
+                torch.nn.init.constant_(m.bias.data, 0.0)
+        elif hasattr(m, 'weight') and (class_name.find('Linear') == 0 or class_name.find('Conv') == 0):
+            if init_type == 'normal':
+                torch.nn.init.normal_(m.weight.data, mean= 0, std= init_gain)
+            
+            elif init_type == 'xavier':
+                torch.nn.inti.xavier_normal_(m.weight.data, gain= init_gain)
+            
+            elif init_type == 'xavier_uniform':
+                torch.nn.init.xavier_uniform_(m.weight.data, gain= init_gain)
+            
+            elif init_type == 'kaiming':
+                torch.nn.init.kaiming_normal_(m.weight.data, a= 0, mode= 'fan_in')
+            
+            elif init_type == 'truncnorm':
+                torch.nn.init.trunc_normal_(m.weight.data, mean= 0., std= init_gain)
+            
+            elif init_type == 'orthogonal':
+                torch.nn.init.orthogonal_(m.weight.data, gain= init_gain)
+            
+            elif init_type == 'none':   # uses pytorch's default init method
+                m.reset_parameters()
+            
+            else:
+                raise NotImplementedError(f'[ERROR] Initialization method {init_type} is not implemented!')
+            
+            if hasattr(m, 'bias') and m.bias is not None:
+                torch.nn.init.constant_(m.bias.data, 0.0)
+    model.apply(init_func)
+
+
 ###########################
 #      Metric Manager     #
 ###########################
