@@ -37,3 +37,5 @@ class FedAvgServer(BaseServer):
         logger.info(f'[{self.args.algorithm.upper()}] [{self.args.dataset.upper()}] [Round: {str(self.round).zfill(4)}] ...successfully initialized the model ({self.args.model_name}; (Initialization type: {self.args.init_type.upper()}))!')
         
         return model
+    
+    # TODO :: several methods are under implementations
