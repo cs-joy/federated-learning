@@ -91,4 +91,102 @@ class FedAvgServer(BaseServer):
     
     def _log_results(self, resulting_sizes, results, eval, participated, save_raw):
         losses, metrics, num_sample = list(), defaultdict(list), list()
-        # TODO
+        for identifier, result in results.items():
+            client_log_string = f'[{self.args.algorithm.upper()}] [{self.args.dataset.upper()}] [Round: {str(self.round).zfill(4)}] [{"EVALUATE" if eval else "UPDATE"}] [CLIENT] < {str(identifier).zfill(6)} > '
+            if eval:    # get loss and metrics
+                # loss
+                loss = result['loss']
+                client_log_string += f'| loss: {loss:.4f} '
+                losses.append(loss)
+
+                # metrics
+                for metric, value in result['metrics'].items():
+                    client_log_string += f'| {metrics}: {value:.4f} '
+                    metrics[metric].append(value)
+
+            else:   # same, but retrieve results of last epoch's
+                # loss
+                loss = results[self.args.E]['loss']
+                client_log_string += f'| loss: {loss:.4f} '
+                losses.append(loss)
+            
+                # metrics
+                for name, value in result[self.args.E]['metrics'].items():
+                    client_log_string += f'| {name}: {value:.4f} '
+                    metrics[name].append(value)
+            
+            # get sample size
+            num_sample.append(resulting_sizes[identifier])
+
+            # log per client
+            logger.info(client_log_string)
+        
+        else:
+            num_samples = np.array(num_samples).astype(float)
+        
+        # aggregate into total logs
+        result_dict = defaultdict(dict)
+        total_log_string = f'[{self.args.algorithm.upper()}] [{self.args.dataset.upper()}] [Round: {str(self.round).zfill(4)}] [{"EVALUATE" if eval else "UPDATE"}] [SUMMARY] ({len(resulting_sizes)} clients):'
+
+        # loss
+        losses_array = np.array(losses).astype(float)
+        weighted = losses_array.dot(num_samples) / sum(num_samples); std = losses_array.std()
+
+        top10_indices = np.argpartition(losses_array, -int(0.1 * len(losses_array)))[-int(0.1 * len(losses_array)):] if len(losses_array) > 1 else 0
+        top10 = np.atleast_1d(losses_array[top10_indices])
+        top10_mean, top10_std = top10.dot(np.atleast_1d(num_samples[top10_indices])) / num_samples[top10_indices].sum(), top10.std()
+
+        bot10_indices = np.argpartition(losses_array, max(1, int(0.1 * len(losses_array)) - 1))[:max(1, int(0.1 * len(losses_array)))] if len(losses_array) > 1 else 0
+        bot10 = np.atleast_1d(losses_array[bot10_indices])
+        bot10_mean, bot10_std = bot10.dot(np.atleast_1d(num_samples[bot10_indices])) / num_samples[bot10_indices].sum(), bot10.std()
+
+        total_log_string += f'\n    - Loss: Avg. ({weighted:.4f}) Std. ({std:.4f}) | Top 10% ({top10_mean:.4f}) Std. ({top10_std:.4f}) | Bottom 10% ({bot10_mean:.4f}) Std. ({bot10_std})'
+        result_dict['loss'] = {
+            'avg': weighted.astype(float), 'std': std.astype(float),
+            'top10p_avg': top10_mean.astype(float), 'top10p_std': top10_std.astype(float),
+            'bottom10p_avg': bot10_mean.astype(float), 'bottom10p_std': bot10_std.astype(float)
+        }
+
+        if save_raw:
+            result_dict['loss']['raw'] = losses
+
+        self.writer.add_scalars(
+            f'Local {"Test" if eval else "Training"} Loss' + eval * f'({"In" if participated else "Out"})',
+            {'Avg.': weighted, 'Std.': std, 'Top 10% Avg.': top10_mean, 'Top 10% Std.': top10_std, 'Bottom 10% Avg.': bot10_mean, 'Bottom 10% Std.': bot10_std},
+            self.round
+        )
+
+        # metrics
+        for name, val in metrics.items():
+            val_array = np.array(val).astype(float)
+            weighted = val_array.dot(num_samples) / sum(num_samples); std = val_array.std()
+
+            top10_indices = np.argpartition(val_array, -int(0.1 * len(val_array)))[-int(0.1 * len(val_array)):] if len(val_array) > 1 else 0
+            top10 = np.atleast_1d(val_array[top10_indices])
+            top10_mean, top10_std = top10.dot(np.atleast_1d(num_samples[top10_indices])) / num_samples[top10_indices].sum(), top10.std()
+
+            bot10_indices = np.argpartition(val_array, max(1, int(0.1 * len(val_array)) - 1))[:max(1, int(0.1 * len(val_array)))] if len(val_array) > 1 else 0
+            bot10 = np.atleast_1d(val_array[bot10_indices])
+            bot10_mean, bot10_std = bot10.dot(np.atleast_1d(num_samples[bot10_indices])) / num_samples[bot10_indices].sum(), bot10.std()
+
+            total_log_string += f'\n    - {name.title()}: Avg. ({weighted:.4f}) Std. ({std:.4f}) | Top 10% ({top10_mean:.4f}) Std. ({top10_std:.4f}) | Bottom 10% ({bot10_mean:.4f}) Std. ({bot10_std:.4f})'
+            result_dict[name] = {
+                'avg': weighted.astype(float), 'std': std.astype(float),
+                'top10p_avg': top10_mean.astype(float), 'top10p_std': top10_std.astype(float),
+                'bottom10p_avg': bot10_mean.astype(float), 'bottom10p_std': bot10_std.astype(float)
+            }
+
+            if save_raw:
+                result_dict[name]['raw'] = val
+            
+            self.writer.add_scalars(
+                f'Local {"Test" if eval else "Training"} {name.title()}' + eval * f' ({"In" if participated else "Out"})',
+                {'Avg.': weighted, 'Std.': std, 'Top 10% Avg.': top10_mean, 'Top 10% Std.': top10_std, 'Bottom 10% Avg.': bot10_mean, 'Bottom 10% Std.': bot10_std},
+                self.round
+            )
+            self.writer.flush()
+        
+        # log total message
+        logger.info(total_log_string)
+        
+        return result_dict
