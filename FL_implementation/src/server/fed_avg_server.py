@@ -190,3 +190,204 @@ class FedAvgServer(BaseServer):
         logger.info(total_log_string)
         
         return result_dict
+
+    def _request(self, ids, eval, pariticipated, retain_mdel, save_raw):
+        def __update_clients(client):
+            if client.model is None:
+                client.dowload(self.global_model)
+            
+            client.args.lr = self.curr_lr
+            update_result = client.update()
+
+            return {client.id: len(client.training_set)}, {client.id: update_result}
+        
+        def __evaluate_clients(client):
+            if client.model is None:
+                client.download(self.global_model)
+            
+            eval_result = client.evaluate()
+            if not retain_mdel:
+                client.model = None
+            
+            return {client.id: len(client.test_set)}, {client.id: eval_result}
+        
+        logger.info(f'[{self.args.algorithm.upper()}] [{self.args.dataset.upper()}] [Round: {str(self.round).zfill(4)}] Request {"updates" if not eval else "evaluation"} to {"all" if ids is None else len(ids)} clients!')
+        if eval:
+            if self.args.train_only:
+                return None
+            
+            jobs, results = [], []
+            with concurrent.futures.ThreadPoolExecutor(max_workers= min(len(ids), os.cpu_count() - 1)) as workhorse:
+                for idx in TqdmToLogger(
+                    ids,
+                    logger = logger,
+                    desc = f'[{self.args.algorithm.upper()}] [{self.args.dataset.upper()}] [Round: {str(self.round).zfill(4)}] ...evaluate clients... ',
+                    total = len(ids)
+                ):
+                    jobs.append(workhorse.submit(__evaluate_clients, self.clients[idx]))
+
+            _eval_sizes, _eval_results = list(map(list, zip(*results)))
+            _eval_sizes, _eval_results = dict(ChainMap(*_eval_sizes)), dict(ChainMap(*_eval_results))
+            self.results[self.round][f'clients_evaluated_{"in" if pariticipated else "out"}'] = self._log_results(
+                _eval_sizes,
+                _eval_results,
+                eval = True,
+                participated= pariticipated,
+                save_raw= save_raw
+            )
+            logger.info(f'[{self.args.algorithm.upper()}] [{self.args.dataset.upper()}] [Round: {str(self.round).zfill(4)}] ...completed evaluation of {"all" if ids is None else len(ids)} clients!')
+
+            return None
+        
+        else:
+            jobs, results = [], []
+            with concurrent.futures.ThreadPoolExecutor(max_workers= min(len(ids), os.cpu_count() - 1)) as workhorse:
+                for idx in TqdmToLogger(
+                    ids,
+                    logger = logger,
+                    desc = f'[{self.args.algorithm.upper()}] [{self.args.dataset.upper()}] [Round: {str(self.round).zfill(4)}] ...update clients... ',
+                    total = len(ids),
+                ):
+                    jobs.append(workhorse.submit(__update_clients, self.clients[idx]))
+                
+                for job in concurrent.futures.as_completed(jobs):
+                    results.append(job.result())
+            
+            update_sizes, _update_results = list(map(list), zip(*results))
+            update_sizes, _update_results = dict(ChainMap(*update_sizes)), dict(ChainMap(*_update_results))
+            self.results[self.round]['clients_updated'] = self._log_results(
+                update_sizes,
+                _update_results,
+                eval = False,
+                participated = True,
+                save_raw = False
+            )
+            logger.info(f'[{self.args.algorithm.upper()}] [{self.args.dataset.upper()}] [Round: {str(self.round).zfill(4)}] ...completed updates of {"all" if ids is None else len(ids)} clients!')
+
+            return update_sizes
+
+    def _aggregate(self, server_optimizer, ids, updated_sizes):
+        assert set(updated_sizes.keys()) == set(ids)
+        logger.info(f'[{self.args.algorithm.upper()}] [{self.args.dataset.upper()}] [Round: {str(self.round).zfill(4)}] Aggregate updated signals!')
+
+        # calculate mixing coefficients according to sample_sizes
+        coefficients = {identifier: float(numerator / sum(updated_sizes.values)) for identifier, numerator in updated_sizes.items()}
+
+        # accumulate weights
+        for identifier in ids:
+            local_layers_iterator = self.clients[identifier].upload()
+            server_optimizer.accumulate(coefficients[identifier], local_layers_iterator)
+            self.clients[identifier].model = None
+        
+        logger.info(f'[{self.args.algorithm.upper()}] [{self.args.dataset.upper()}] [Round: {str(self.round).zfill(4)}] ...successfully aggregated into a new global model!')
+        
+        return server_optimizer
+    
+
+    @torch.no_grad()
+    def _central_evaluate(self):
+        mm = MetricManager(self.args.eval_metrics)
+        self.global_model.eval()
+        self.global_model.to(self.args.device)
+
+        for inputs, targets in torch.utils.data.DataLoader(dataset= self.server_dataset, batch_size= self.args.B, shuffle= False):
+            inputs, targets = inputs.to(self.args.device), targets.to(self.args.device)
+
+            outputs = self.global_model(inputs)
+            loss = torch.nn.__dict__[self.args.criterion]()(outputs, targets)
+
+            mm.track(loss.item(), outputs, targets)
+        else:
+            self.global_model.to('cpu')
+            mm.aggregate(len(self.server_dataset))
+
+        # log result
+        result = mm.results
+        server_log_string = f'[{self.args.algorithm.upper()}] [{self.args.dataset.upper()}] [Round: {str(self.round).zfill(4)}] [EVALUATE] [SERVER] '
+
+        # loss
+        loss = result['loss']
+        server_log_string += f'| loss: {loss:.4f} '
+
+        ## metrics
+        for metric, value in result['metrics'].items():
+            server_log_string += f' {metric}: {value:.4f} '
+        logger.info(server_log_string)
+
+        # log TensorBoard
+        self.writer.add_scalar('Server Loss', loss, self.round)
+        for name, value in result['metrics'].items():
+            self.writer.add_scalar(f'Scalar {name.title()}', value, self.round)
+        
+        else:
+            self.writer.flush()
+        
+        self.results[self.round]['server_evaluated'] = result
+    
+    def update(self):
+        """
+        Update the global model through FL
+        """
+        #################
+        # Client Update #
+        #################
+        selected_ids = self._sample_clients()   # randomly select clients
+        updated_sizes = self._request(selected_ids, eval= False, pariticipated= True, retain_mdel= True, save_raw= False)   # request update to selected clients
+        _ = self._request(selected_ids, eval= True, pariticipated= True, retain_mdel= True, save_raw= False)    # request evaluation to selected clients
+
+        #################
+        # Server Update #
+        #################
+        server_optimizer = self._get_algorithm(self.global_model, **self.opt_kwargs)
+        server_optimizer.zero_grad(set_to_none= True)
+        server_optimizer = self._aggregate(server_optimizer, selected_ids, updated_sizes)   # aggregate local update
+        server_optimizer.step() # update global model 
+        if self.round % self.args.lr_decay_step == 0:   # update learning rate
+            self.curr_lr *= self.args.lr_decay
+        
+        return selected_ids
+    
+    def evaluate(self, excluded_ids):
+        """
+        Evaluate the global model located at the server
+        """
+        ##############
+        # Evaluation #
+        ##############
+        if self.args.eval_type != 'global': # `local` or `both`: evaluate on selected client's holdout set
+            selected_ids = self._sample_clients(exclude= excluded_ids)
+            _ = self._request(selected_ids, eval= True, pariticipated= False, retain_mdel= False, save_raw= self.round == self.args.R)
+        
+        if self.args.eval_type != 'local':  # `global` or `both`: evaluate on the server's global holdout set
+            self._central_evaluate()
+        
+        # calculate generalization gap
+        if (not self.args.train_only) and (not self.args.eval_type == 'global'):
+            gen_gap = dict()
+            curr_res = self.results[self.round]
+            for key in curr_res['clients_evaluated_out'].keys():
+                for name in curr_res['clients_evaluated_out'][key].keys():
+                    if 'avg' in name:
+                        gap = curr_res['clients_evaluated_out'][key][name] - curr_res['clients_evaluated_in'][key][name]
+                        gen_gap[f'gen_gap{key}'] = {name: gap}
+                        self.writer.add_scalars(f'Generalization Gap ({key.title()})', gen_gap[f'gen_gap{key}'], self.round)
+                        self.writer.flush()
+                    
+                    else:
+                        self.results[self.round]['generalization_gap'] = dict(gen_gap)
+    
+    def finalize(self):
+        """
+        Save results
+        """
+        logger.info(f'[{self.args.algorithm.upper()}] [{self.args.dataset.upper()}] [Round: {str(self.round).zfill(4)}] Save results and the gloabl model checkpoint!')
+        with open(os.path.join(self.args.result_path, f'{self.args.exp_name}.json'), 'w', encoding = 'utf8') as rersult_file:   # save results
+            results = {key: value for key, value in self.results.items()}
+            json.dump(results, rersult_file, index = 4)
+        
+        torch.save(self.global_model.state_dict(), os.path.join(self.args.result_path, f'{self.args.exp_name}.pt')) # save model checkpoint
+        self.writer.close()
+        logger.info(f'[{self.args.algorithm.upper()}] [{self.args.dataset.upper()}] [Round: {str(self.round).zfill(4)}] ...finished federated learning!')
+
+        if self.args.use_tab:
+            input('[FINISH] ...press <Enter> to exit after tidying up your TensorBoard logging!')
