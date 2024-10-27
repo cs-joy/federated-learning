@@ -17,6 +17,210 @@ logger = logging.getLogger(__name__)
 
 
 ###########################
+#     Stratified Split    #
+###########################
+def stratified_split(raw_dataset, test_size):
+    indices_per_label = defaultdict(list)
+    for index, label in enumerate(np.array(raw_dataset.dataset.targets)[raw_dataset.indices]):
+        indices_per_label[label.item()].append(index)
+    
+    train_indices, test_indices = [], []
+    for label, indices in indices_per_label.items():
+        n_samples_for_label = round(len(indices) * test_size)
+        random_indices_sample = random.sample(indices, n_samples_for_label)
+        test_indices.extend(random_indices_sample)
+        train_indices.extend(set(indices) - set(random_indices_sample))
+    
+    return torch.utils.data.Subset(raw_dataset, train_indices), torch.utils.data.Subset(raw_dataset, test_indices)
+
+
+###########################
+#       Arguments checker #
+###########################
+def check_args(args):
+    # check device
+    if 'cuda' in args.device:
+        assert torch.cuda.is_available(), 'Please check if your GPU is available now!'
+    
+    # check optimizer
+    if args.optimizer not in torch.optim.__dict__.keys():
+        err = f'`{args.optimizer}` is not a submodule of `torch.optim`...please check!'
+        logger.exception(err)
+        raise AssertionError(err)
+
+    # check criterion
+    if args.criterion not in torch.nn.__dict__.keys():
+        err = f'`{args.criterion}` is not a submodule of `torch.nn`...please check!'
+        logger.info(err)
+        raise AssertionError(err)
+    
+    # check algorithm
+    if args.algorithm == 'fedsgd':
+        args.E = 1
+    elif args.algorithm in ['fedavgm', 'fedadam', 'fedyogi', 'fedadagrad']:
+        if (args.beta1 <= 0) and (args.algorithm in ['fedavgm', 'fedadam', 'fedyogi', 'fedadagrad']):
+            err = f'Server momentum factor (i.e., `beta1`) should be positive... please check!'
+            logger.exception(err)
+            raise AssertionError(err)
+
+        if (args.beta2 <= 0) and (args.algorithm in ['fedadam', 'fedyogi']):
+            err = f'Server momentum facotr (i.e., `beta2`) should be positive... please check!'
+            logger.exception(err)
+            raise AssertionError(err)
+    
+    # check model
+    if args.model_name == 'Sent140LSTM':
+        with open(os.path.join(args.data_path, 'sent140', 'vocab', 'glove.6B.300d.json'), 'r') as file:
+            emb_weights = torch.tensor(json.load(file))
+        args.glove.emb = emb_weights
+    else:
+        args.glove_emb = False
+    
+    # check lr step
+    if args.lr_decay_step > args.R:
+        err = f'Step size for learning rate decay (`{args.lr_decay_step}`) should be smaller than total round (`{args.R}`)... please check!'
+        logger.exception(err)
+        raise AssertionError(err)
+
+    # check train only mode
+    if args.test_size == 0:
+        args.train_only = True
+    else:
+        args.train_only = False
+    
+    # check compatibility of evaluation metrics
+    if hasattr(args, 'num_classes'):
+        if args.num_classes > 2:
+            if ('auprc' or 'youdenj') in args.eval_metrics:
+                err = f'Some metrics (`auprc`, `youdenj`) are not compatible with multi-class setting... please check!'
+                logger.exception(err)
+                raise AssertionError(err)
+            else:
+                if 'acc5' in args.eval_metrics:
+                    err = f'Top5 accuracy (`acc5`) is not compatible with binary-class setting... please check!'
+                    logger.exception(err)
+                    raise AssertionError(err)
+            
+            if ('msc' or 'mae' or 'mape' or 'rmse' or 'r2' or 'd2') in args.eval_metrics:
+                err = f'Selected dataset (`{args.dataset}`) is for a classification task... please check evaluation matrics!'
+                logger.exception(err)
+                raise AssertionError(err)
+    else:
+        if ('acc1' or 'acc5' or 'auroc' or 'auprc' or 'youdenj' or 'f1' or 'precision' or 'recall' or 'seqacc') in args.eval_metrics:
+            err = f'Selected dataset (`{args.dataset}`) is for regression task.... please check evaluation metrics!'
+            logger.exception(err)
+            raise AssertionError(err)
+    
+    # adjust the number of classes in a binary classification task
+    if args.num_classes == 2:
+        args.num_classes = 1
+        args.criterion = 'BCEWithLogitsLoss'
+    
+    # check task
+    if args.criterion == 'Seq2SeqLoss':
+        args.is_seq2seq = True
+    else:
+        args.is_seq2seq = False
+    
+    # print welcome message
+    logger.info('[CONFIG] List up configurations...')
+    for arg in vars(args):
+        if 'glove_emb' in str(args):
+            if getattr(args, arg) is True:
+                logger.info(f'[CONFIG] - {str(arg).upper()}: USE!')
+            else:
+                logger.info(f'[CONFIG] - {str(arg).upper()}: NOT USE!')
+            continue
+        logger.info(f'[CONFIG] - {str(arg).upper()}: {getattr(args, arg)}')
+    else:
+        print('')
+    
+    return args
+
+
+
+###########################
+#       TensorBoard       #
+###########################
+class TensorBoardRunner:
+    def __init__(self, path, host, port):
+        logger.info('[TENSORBOARD] Start TensorBoard process!')
+        self.server = TensorBoardServer(path, host, port)
+        self.server.start()
+        self.daemon = True
+    
+    def finalize(self):
+        if self.server.is_alive():
+            self.server.terminate()
+            self.server.join()
+        self.server.pkill()
+        logger.info('[TENSORBOARD] ...finished TensorBoard process!')
+    
+    def interrupt(self):
+        self.server.pkill()
+        if self.server.is_alive():
+            self.server.terminate()
+            self.server.join()
+        logger.info('[TENSORBOARD] ...interrupted; killed all TensorBoard process!')
+
+class TensorBoardServer(Process):
+    def __init__(self, path, host, port):
+        super().__init__()
+        self.os_name = os.name
+        self.path = str(path)
+        self.host = host
+        self.port = port
+        self.daemon = True
+    
+    def run(self):
+        if self.os_name == 'nt':    # Windows
+            os.system(f'{sys.executable} -m tensorboard.main --logdir "{self.path}" --host {self.host} --reuse_port=true --port {self.port} 2> NUL')
+        elif self.os_name == 'posix':   # Linux
+            os.system(f'{sys.executable} -m tensorboard.main --logdir "{self.path}" --host {self.host} --reuse_port=true --port {self.port} >/dev/null 2>&1')
+        else:
+            err = f'Current OS ({self.os_name}) is not supported'
+            logger.exception(err)
+            raise Exception(err)
+    
+    def pkill(self):
+        if self.os_name == 'nt':    # Windows
+            os.system(f'taskkill /IM "tensorboard.exe" \F')
+        elif self.os_name == 'posix':   # Linux
+            os.system(f'pgrep -f tensorboard | xargs kill -9')
+
+
+###########################
+#  Argsparser Restriction #
+###########################
+class Range:
+    def __init__(self, start, end):
+        self.start = start
+        self.end = end
+
+    def __eq__(self, other):
+        return self.start <= other <= self.end
+
+    def __str__(self):
+        return f'Specified Range: [{self.start:.2f}, {self.end:.2f}]'
+
+
+###########################
+#           Seed          #     
+###########################
+def set_seed(seed):
+    torch.manual_seed(seed)
+    random.seed(seed)
+    np.random.seed(seed)
+    os.environ['PYTHON_HASH_SEED'] = str(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+    logger.info(f'[SEED] ...seed is set: {seed}!')
+
+
+###########################
 #       tqdm add-on       #
 ###########################
 class TqdmToLogger(tqdm):
