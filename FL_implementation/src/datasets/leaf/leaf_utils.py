@@ -41,10 +41,17 @@ def download_data(download_root, dataset_name):
     Download data from Google Drive and extract if it is archived.
     """
     def _get_confirm_token(response):
-        pass
+        for key, value in response.cookies.items():
+            if key.startswith('download_warning'):
+                return value
+        return None
 
     def _save_response_content(download_root, response):
-        pass
+        CHUNK_SIZE = 32768
+        with open(download_root, 'wb') as file:
+            for chunk in response.iter_content(CHUNK_SIZE):
+                if chunk:   # filter out keep-alive new chunks
+                    file.write(chunk)
 
     def _download_file_from_google_drive(download_root, file_name, identifier):
         pass
