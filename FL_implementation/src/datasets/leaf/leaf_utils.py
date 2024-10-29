@@ -54,4 +54,38 @@ def download_data(download_root, dataset_name):
                     file.write(chunk)
 
     def _download_file_from_google_drive(download_root, file_name, identifier):
-        pass
+        BASE_URL = 'https://docs.google.com/uc?export=download'
+
+        session = requests.Session()
+        response = session.get(BASE_URL, params= {'id': identifier, 'confirm': 1}, stream= True)
+        token = _get_confirm_token(response)
+
+        if token:
+            params = {'id': identifier, 'confirm': token}
+            response = session.get(BASE_URL, params= params, stream= True)
+        _save_response_content(os.path.join(download_root, file_name), response)
+        print(f'...successfully download file `{file_name}` at `{download_root}`!')
+
+        if '.zip' in file_name:
+            with zipfile.ZipFile(os.path.join(download_root, file_name), 'r', compression= zipfile.ZIP_STORED) as zip_file:
+                zip_file.extractall(download_root)
+            print(f'...successfully extracted `{file_name}` at `{download_root}`!')
+    
+    # download data from web
+    logger.info(f'[LOAD] [LEAF - {dataset_name.upper()}] Start downloading data...!')
+    try:
+        for (url, opt) in zip(URL[dataset_name], OPT[dataset_name]):
+            if 'http' not in url:
+                _download_file_from_google_drive(download_root, opt, url)
+            else:
+                torchvision.datasets.utils.download_and_extract_archive(
+                    url= url,
+                    download_root= download_root,
+                    md5= opt,
+                    remove_finished= True
+                )
+        else:
+            logger.info(f'[LEAF - {dataset_name.upper()}] ...finished downloading data!')
+    except:
+        logger.exception(url)
+        raise Exception(url)
