@@ -3,7 +3,7 @@ import json
 
 
 
-def filter_chain(dataset_name, root, min_samples_per_clients):
+def filter_clients(dataset_name, root, min_samples_per_clients):
     # set path
     data_dir = os.path.join(root, dataset_name)
     subdir = os.path.join(data_dir, 'sample_data')
