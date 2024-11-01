@@ -182,6 +182,10 @@ def preprocess(root):
             user_data[w] = {'x': [], 'y': []}
 
             for f, c in l:
+                #gray = PIL.Image.open(f).convert('L')
+                #vec = 1 - np.array(gray) / 255  # scale all pixel values to between 0 and 1
+                #vec = vec.tolist()
+
                 nc = _relable_fmnist_class(c)
                 user_data[w]['x'].append(str(f))
                 user_data[w]['y'].append(nc)
