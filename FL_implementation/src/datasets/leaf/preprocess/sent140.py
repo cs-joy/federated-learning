@@ -54,7 +54,7 @@ def preprocess(root):
             encoding= 'ISO-8859-1',
             header= None,
             names= ['target', 'id', 'date', 'flag', 'user', 'text'],
-            usecols= ['target', 'user', 'text']
+            usecols= ['target', 'user', 'text'],
             index_col= 'user'
         )
         raw_all = pd.concat([raw_train, raw_test]).sort_index(kind= 'mergesort')
@@ -168,3 +168,29 @@ def preprocess(root):
     
     # set path
     DATASET_NAME = __file__.split('/')[-1].split('.')[0]
+    path = os.path.join(os.path.expanduser(root, ), DATASET_NAME)
+
+    # check if pre-processing has already done
+    if not os.path.exists(os.path.join(path, 'all_data')):
+        os.makedirs(os.path.join(path, 'all_data'))
+    else:
+        return
+    
+    # make path for GloVe vocabulary
+    if not os.path.exists(os.path.join(path, 'vocab')):
+        os.makedirs(os.path.join(path, 'vocab'))
+
+    # get GloVe vocabulary
+    logger.info(f'[LOAD] [LEAF - {DATASET_NAME.upper()}] Process GloVe embeddings (300 dim.)...! ')
+    glove_vocab_indices = _get_glove_vocab(path)
+    logger.info(f'[LOAD] [LEAF - {DATASET_NAME.upper()}] ...finished processing GloVe embeddings!')
+
+    # combine raw data
+    logger.info(f'[LOAD] [LEAF - {DATASET_NAME.upper()}] Combine raw data....!')
+    raw_all = _combine_data(os.path.join(path, 'raw'))
+    logger.info(f'[LOAD] [LEAF - {DATASET_NAME.upper()}] ...finished combining raw data!')
+
+    # convert to json format
+    logger.info(f'p[LOAD] [LEAF - {DATASET_NAME.upper()}] Convert data to json format... (this may take several minutes!)')
+    _convert_to_json(path, raw_all, glove_vocab_indices)
+    logger.info(f'[LOAD] [LEAF - {DATASET_NAME.upper()}] ...finished converting data to json format!')
