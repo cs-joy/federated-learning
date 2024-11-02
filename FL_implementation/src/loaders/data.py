@@ -298,3 +298,28 @@ def load_dataset(args):
         logger.info(f'[SIMULATE] ...done simulating dataset split (split scenario: `{args.split_type.upper()}`)!')
     
     # construct client datasets if None
+    if client_datasets is None:
+        logger.info(f'[SIMULATE] Create client datasets!')
+        client_datasets = []
+        with concurrent.futures.ThreadPoolExecutor(max_workers= min(args.K, os.cpu_count() - 1)) as workhorse:
+            for idx, sample_indices in TqdmToLogger(
+                enumerate(split_map.values()),
+                logger= logger,
+                desc= f'[SIMULATE] ...creating client datasets... ',
+                total= len(split_map)
+            ):
+                client_datasets.append(workhorse.submit(_construct_dataset, raw_train, idx, sample_indices).result())
+        logger.info(f'[SIMULATE] ...successfully created client datasets!')
+
+        ## when if assigning pre-defined test split as a local hold-out set (just divided by the total number of clients)
+        if (args.eval_type == 'local') and (args.test_size == -1):
+            holdout_sets = random_split(_raw_test, [int(len(_raw_test) / args.K) for _ in range(args.K)])
+            holdout_sets = [SubsetWrapper(holdout_sets, f'< {str(idx).zfill(8)} > (test)') for idx, holdout_set in enumerate(holdout_sets)]
+            augmented_datasets = []
+            for idx,  client_dataset in enumerate(client_datasets):
+                augmented_datasets.append((client_dataset[0], holdout_sets[idx]))
+            client_datasets = augmented_datasets
+
+    gc.collect()
+
+    return raw_test, client_datasets 
