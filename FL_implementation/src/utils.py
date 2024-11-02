@@ -17,6 +17,163 @@ logger = logging.getLogger(__name__)
 
 
 ###########################
+#  Argsparser Restriction #
+###########################
+class Range:
+    def __init__(self, start, end):
+        self.start = start
+        self.end = end
+
+    def __eq__(self, other):
+        return self.start <= other <= self.end
+
+    def __str__(self):
+        return f'Specified Range: [{self.start:.2f}, {self.end:.2f}]'
+
+###########################
+#           Seed          #     
+###########################
+def set_seed(seed):
+    torch.manual_seed(seed)
+    random.seed(seed)
+    np.random.seed(seed)
+    os.environ['PYTHON_HASH_SEED'] = str(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+    logger.info(f'[SEED] ...seed is set: {seed}!')
+
+###########################
+#       TensorBoard       #
+###########################
+class TensorBoardRunner:
+    def __init__(self, path, host, port):
+        logger.info('[TENSORBOARD] Start TensorBoard process!')
+        self.server = TensorBoardServer(path, host, port)
+        self.server.start()
+        self.daemon = True
+    
+    def finalize(self):
+        if self.server.is_alive():
+            self.server.terminate()
+            self.server.join()
+        self.server.pkill()
+        logger.info('[TENSORBOARD] ...finished TensorBoard process!')
+    
+    def interrupt(self):
+        self.server.pkill()
+        if self.server.is_alive():
+            self.server.terminate()
+            self.server.join()
+        logger.info('[TENSORBOARD] ...interrupted; killed all TensorBoard process!')
+
+class TensorBoardServer(Process):
+    def __init__(self, path, host, port):
+        super().__init__()
+        self.os_name = os.name
+        self.path = str(path)
+        self.host = host
+        self.port = port
+        self.daemon = True
+    
+    def run(self):
+        if self.os_name == 'nt':    # Windows
+            os.system(f'{sys.executable} -m tensorboard.main --logdir "{self.path}" --host {self.host} --reuse_port=true --port {self.port} 2> NUL')
+        elif self.os_name == 'posix':   # Linux
+            os.system(f'{sys.executable} -m tensorboard.main --logdir "{self.path}" --host {self.host} --reuse_port=true --port {self.port} >/dev/null 2>&1')
+        else:
+            err = f'Current OS ({self.os_name}) is not supported'
+            logger.exception(err)
+            raise Exception(err)
+    
+    def pkill(self):
+        if self.os_name == 'nt':    # Windows
+            os.system(f'taskkill /IM "tensorboard.exe" \F')
+        elif self.os_name == 'posix':   # Linux
+            os.system(f'pgrep -f tensorboard | xargs kill -9')
+
+###########################
+#       tqdm add-on       #
+###########################
+class TqdmToLogger(tqdm):
+    def __init__(self, *args, logger=None,
+        min_interval = 0.1,
+        bar_format = '{desc:<}{percentage: 3.0f}% |{bar: 20}| [{n_fmt: 6s}/{total_fmt}]',
+        desc = None,
+        **kwargs
+    ):
+        self._logger = logger
+        super().__init__(*args, mininterval=min_interval, bar_format=bar_format, desc=desc, **kwargs)
+    
+    @property
+    def logger(self):
+        if self._logger is not None:
+            return self._logger
+        return logger
+    
+    def display(self, msg=None, pos= None):
+        if not self.n:
+            return
+        if not msg:
+            msg = self.__str__()
+        self.logger.info('%s', msg.strip('\r\n\t '))
+
+##########################
+#  Weight Initialization #
+##########################
+def init_weights(model, init_type, init_gain):
+    """
+    Initialize network weights.
+
+    Args:
+        model (torch.nn.Module): network to be initialized
+        init_type (string): the name of an initialization method: normal | xavier | xavier_uniform | kaiming | truncnorm | orthogonal | none
+        init_gain (float): scaling factor for normal, xavier and orthogonal
+    
+    Returns:
+        model (torch.nn.Module): initialized model with `init_type` and `init_gain`
+    """
+    def init_func(m):   # define the initializtion function
+        class_name = m.__class__.__name__
+        if class_name.find('BatchNorm2d') != -1:
+            if hasattr(m, 'weight') and m.weight is not None:
+                torch.nn.init.normal_(m.weight.data, mean= 1.0, std= init_gain)
+
+            if hasattr(m, 'bias') and m.bias is not None:
+                torch.nn.init.constant_(m.bias.data, 0.0)
+        elif hasattr(m, 'weight') and (class_name.find('Linear') == 0 or class_name.find('Conv') == 0):
+            if init_type == 'normal':
+                torch.nn.init.normal_(m.weight.data, mean= 0, std= init_gain)
+            
+            elif init_type == 'xavier':
+                torch.nn.inti.xavier_normal_(m.weight.data, gain= init_gain)
+            
+            elif init_type == 'xavier_uniform':
+                torch.nn.init.xavier_uniform_(m.weight.data, gain= init_gain)
+            
+            elif init_type == 'kaiming':
+                torch.nn.init.kaiming_normal_(m.weight.data, a= 0, mode= 'fan_in')
+            
+            elif init_type == 'truncnorm':
+                torch.nn.init.trunc_normal_(m.weight.data, mean= 0., std= init_gain)
+            
+            elif init_type == 'orthogonal':
+                torch.nn.init.orthogonal_(m.weight.data, gain= init_gain)
+            
+            elif init_type == 'none':   # uses pytorch's default init method
+                m.reset_parameters()
+            
+            else:
+                raise NotImplementedError(f'[ERROR] Initialization method {init_type} is not implemented!')
+            
+            if hasattr(m, 'bias') and m.bias is not None:
+                torch.nn.init.constant_(m.bias.data, 0.0)
+    model.apply(init_func)
+
+
+###########################
 #     Stratified Split    #
 ###########################
 def stratified_split(raw_dataset, test_size):
@@ -138,166 +295,42 @@ def check_args(args):
     return args
 
 
-
-###########################
-#       TensorBoard       #
-###########################
-class TensorBoardRunner:
-    def __init__(self, path, host, port):
-        logger.info('[TENSORBOARD] Start TensorBoard process!')
-        self.server = TensorBoardServer(path, host, port)
-        self.server.start()
-        self.daemon = True
-    
-    def finalize(self):
-        if self.server.is_alive():
-            self.server.terminate()
-            self.server.join()
-        self.server.pkill()
-        logger.info('[TENSORBOARD] ...finished TensorBoard process!')
-    
-    def interrupt(self):
-        self.server.pkill()
-        if self.server.is_alive():
-            self.server.terminate()
-            self.server.join()
-        logger.info('[TENSORBOARD] ...interrupted; killed all TensorBoard process!')
-
-class TensorBoardServer(Process):
-    def __init__(self, path, host, port):
-        super().__init__()
-        self.os_name = os.name
-        self.path = str(path)
-        self.host = host
-        self.port = port
-        self.daemon = True
-    
-    def run(self):
-        if self.os_name == 'nt':    # Windows
-            os.system(f'{sys.executable} -m tensorboard.main --logdir "{self.path}" --host {self.host} --reuse_port=true --port {self.port} 2> NUL')
-        elif self.os_name == 'posix':   # Linux
-            os.system(f'{sys.executable} -m tensorboard.main --logdir "{self.path}" --host {self.host} --reuse_port=true --port {self.port} >/dev/null 2>&1')
-        else:
-            err = f'Current OS ({self.os_name}) is not supported'
-            logger.exception(err)
-            raise Exception(err)
-    
-    def pkill(self):
-        if self.os_name == 'nt':    # Windows
-            os.system(f'taskkill /IM "tensorboard.exe" \F')
-        elif self.os_name == 'posix':   # Linux
-            os.system(f'pgrep -f tensorboard | xargs kill -9')
-
-
-###########################
-#  Argsparser Restriction #
-###########################
-class Range:
-    def __init__(self, start, end):
-        self.start = start
-        self.end = end
-
-    def __eq__(self, other):
-        return self.start <= other <= self.end
-
-    def __str__(self):
-        return f'Specified Range: [{self.start:.2f}, {self.end:.2f}]'
-
-
-###########################
-#           Seed          #     
-###########################
-def set_seed(seed):
-    torch.manual_seed(seed)
-    random.seed(seed)
-    np.random.seed(seed)
-    os.environ['PYTHON_HASH_SEED'] = str(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
-
-    logger.info(f'[SEED] ...seed is set: {seed}!')
-
-
-###########################
-#       tqdm add-on       #
-###########################
-class TqdmToLogger(tqdm):
-    def __init__(self, *args, logger=None,
-        min_interval = 0.1,
-        bar_format = '{desc:<}{percentage: 3.0f}% |{bar: 20}| [{n_fmt: 6s}/{total_fmt}]',
-        desc = None,
-        **kwargs
-    ):
-        self._logger = logger
-        super().__init__(*args, mininterval=min_interval, bar_format=bar_format, desc=desc, **kwargs)
-    
-    @property
-    def logger(self):
-        if self._logger is not None:
-            return self._logger
-        return logger
-    
-    def display(self, msg=None, pos= None):
-        if not self.n:
-            return
-        if not msg:
-            msg = self.__str__()
-        self.logger.info('%s', msg.strip('\r\n\t '))
-
-
-##########################
-#  Weight Initialization #
-##########################
-def init_weights(model, init_type, init_gain):
+####################
+# BCEWithLogitLoss #
+####################
+class PainlessBCEWithLogitsLoss(torch.nn.BCEWithLogitsLoss):
     """
-    Initialize network weights.
-
-    Args:
-        model (torch.nn.Module): network to be initialized
-        init_type (string): the name of an initialization method: normal | xavier | xavier_uniform | kaiming | truncnorm | orthogonal | none
-        init_gain (float): scaling factor for normal, xavier and orthogonal
-    
-    Returns:
-        model (torch.nn.Module): initialized model with `init_type` and `init_gain`
+    Native `torch.nn.BCEWithLogitsLoss` rerquires squeezed logits shape and targets with float type
     """
-    def init_func(m):   # define the initializtion function
-        class_name = m.__class__.__name__
-        if class_name.find('BatchNorm2d') != -1:
-            if hasattr(m, 'weight') and m.weight is not None:
-                torch.nn.init.normal_(m.weight.data, mean= 1.0, std= init_gain)
+    def __init__(self, **kwargs):
+        super(PainlessBCEWithLogitsLoss, self).__init__(**kwargs)
+    
+    def forward(self, inputs, targets):
+        return torch.nn.functional.binary_cross_entropy_with_logits(
+            torch.atleast_1d(inputs.squeeze()),
+            torch.atleast_1d(targets.squeeze())
+        )
 
-            if hasattr(m, 'bias') and m.bias is not None:
-                torch.nn.init.constant_(m.bias.data, 0.0)
-        elif hasattr(m, 'weight') and (class_name.find('Linear') == 0 or class_name.find('Conv') == 0):
-            if init_type == 'normal':
-                torch.nn.init.normal_(m.weight.data, mean= 0, std= init_gain)
-            
-            elif init_type == 'xavier':
-                torch.nn.inti.xavier_normal_(m.weight.data, gain= init_gain)
-            
-            elif init_type == 'xavier_uniform':
-                torch.nn.init.xavier_uniform_(m.weight.data, gain= init_gain)
-            
-            elif init_type == 'kaiming':
-                torch.nn.init.kaiming_normal_(m.weight.data, a= 0, mode= 'fan_in')
-            
-            elif init_type == 'truncnorm':
-                torch.nn.init.trunc_normal_(m.weight.data, mean= 0., std= init_gain)
-            
-            elif init_type == 'orthogonal':
-                torch.nn.init.orthogonal_(m.weight.data, gain= init_gain)
-            
-            elif init_type == 'none':   # uses pytorch's default init method
-                m.reset_parameters()
-            
-            else:
-                raise NotImplementedError(f'[ERROR] Initialization method {init_type} is not implemented!')
-            
-            if hasattr(m, 'bias') and m.bias is not None:
-                torch.nn.init.constant_(m.bias.data, 0.0)
-    model.apply(init_func)
+torch.nn.BCEWithLogitsLoss = PainlessBCEWithLogitsLoss
+
+
+################
+# Seq2Seq Loss #
+################
+class Seq2SeqLoss(torch.nn.CrossEntropyLoss):
+    def __init__(self, **kwargs):
+        super(Seq2SeqLoss, self).__init__(**kwargs)
+    
+    def forward(self, inputs, targets, ignore_indices= torch.tensor([0, 1, 2, 3])):
+        num_classes = inputs.size(-1)
+        inputs, targets = inputs.view(-1, num_classes), targets.view(-1)
+        targets[torch.isin(targets, ignore_indices.to(targets.device))] = -1
+        if targets.float().mean() == -1.:   # if all targets are special tokens
+            return inputs.mul(torch.zeros_like(inputs).float()).sum()
+
+        return torch.nn.functional.cross_entropy(inputs, targets, ignore_index= -1)
+    
+torch.nn.Seq2SeqLoss = Seq2SeqLoss
 
 
 ###########################
