@@ -78,10 +78,34 @@ if __name__ == "__main__":
     parser.add_argument('--dataset', help=''''name of dataset to use to use for an experiment (NOTE: case sensitive)
                         - image classification datasets in `torchvision.datasets`,
                         - text classification datasets in `torchtext.datasets`,
-                        - LEAF banchmarks [ FEMNIST | Sent140 | Shakespeare | CelebA | Reddit ],
+                        - LEAF benchmarks [ FEMNIST | Sent140 | Shakespeare | CelebA | Reddit ],
                         - among [ TinyImageNet | CINIC10 | SpeechCommands | BeerReviewsA | BeerReviewsL | Heart | Adult | Cover | GLEAM ]
                         ''', type= str, required= True)
     parser.add_argument('--test_size', help='a fraction of local hold-out dataset for evaluation (-1 for assigning pre-defined test split as local hold-out set)', type= float, choices= [Range(-1, 1.)], default= 0.2)
     parser.add_argument('rawsmpl', help= 'a fraction of raw data to be used (valid only if one of `LEAF` datasets is used)', type= float, choices= [Range(0., 1.)], default= 1.0)
 
     # data augmentation arguments
+    parser.add_argument('--resize', help= 'resize inputs images (using `torchvision.transforms.Resize`)', type= int, default=None)
+    parser.add_argument('--crop', help= 'crop input image (using `torchvision.transforms.CenterCrop`)', type= int, default=None)
+    parser.add_argument('--imnorm', help= 'normalize channels with mean 0.5 and standard deviation 0.5 (using `torchvision.transforms.Normalize`, if passed)', action= 'store_true')
+    parser.add_argument('--randrot', help= 'randomly rotate input (using `torchvision.transforms.RandomRotation`)', type= int, default=None)
+    parser.add_argument('--randhf', help= 'randomly flip input horizontally (using `torchvision.transforms.RandomHorizontalFlip`)', type= float, choices= [Range(0., 1.)], default=None)
+    parser.add_argument('--randvf', help= 'randomly flip input vertically (using `torchvision.transforms.RandomVerticalFlip`)', type= float, choices= [Range(0., 1.)], default=None)
+    parser.add_argument('--randjit', help= 'randomly change the brightness and contrast (using `torchvision.transforms.ColorJitter`)', type= float, choices= [Range(0., 1.)], default=None)
+
+    ## statistical heterogeneity simulation arguments
+    parser.add_argument('--split_type', help= '''type of data split scenario
+                        - `iid`: statistically homogeneous setting,
+                        - `unbalanced`: unbalanced in sample counts across clients,
+                        - `patho`: pathological non-IID split scenario proposed in (McMahan et al., 2016),
+                        - `diri`: Dirichlet distribution-based split scenario proposed in (Hsu et al., 2019),
+                        - `pre`: pre-define data split scenario
+                        ''', type= str, choices= ['iid', 'unbalanced', 'patho', 'diri', 'pre'], required= True)
+    parser.add_argument('mincls', help= 'the minimum number of distinct classes per client (valid only if `split_type` is `path` or `diri`)', type= int, default= 2)
+    parser.add_argument('--cncntrtn', help= 'a concentration parameter for Dirichlet distribution (valid only if `split_type` is `diri`)', type= float, default= 0.1)
+
+
+
+    ###################
+    # Model arguments #
+    ###################
