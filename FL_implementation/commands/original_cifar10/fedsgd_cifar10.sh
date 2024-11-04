@@ -4,7 +4,7 @@
 # FedSGD experiments in Figure 4, 9 of (McMahan et al., 2016)
 ### IID split
 python3 main.py \
-    --exp_name FedSGD_CIFAR10_CNN_IID --seed 42 --device cuda \
+    --exp_name FedSGD_CIFAR10_CNN_IID --seed 42 --device cpu \
     --dataset CIFAR10 \
     --split_type iid --test_size -1 \
     --model_name SimpleCNN --crop 24 --randhf 0.5 --randjit 0.5 --imnorm --hidden_size 64 \
@@ -14,7 +14,7 @@ python3 main.py \
 
 # Pathological Non-IID split
 python3 main.py \
-    --exp_name FedSGD_CIFAR10_CN_Patho --seed 42 --device cuda \
+    --exp_name FedSGD_CIFAR10_CN_Patho --seed 42 --device cpu \
     --dataset CIFAR10 \
     --split_type patho --test_size -1 \
     --model_name SimpleCNN --crop 24 --randhf 0.5 --randjit 0.5 --imnorm --hidden_size 64 \

@@ -2,7 +2,7 @@
 
 # FedAvg experiments for LEAF CelebA dataset
 python 3 main.py \
-    --exp_name FedAvg_LEAF_CelebA --seed 42 --device cuda \
+    --exp_name FedAvg_LEAF_CelebA --seed 42 --device cpu \
     --dataset CelebA \
     --split_type pre --test_size 0.1 \
     --model_name TwoCNN --resize 84 --hidden_size 32 \

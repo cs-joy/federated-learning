@@ -2,7 +2,7 @@
 
 # FedAvg experiments for LEAF Reddit dataset
 python3 main.py \
-    --exp_name FedAvg_LEAF_Reddit --seed 42 --device cuda \
+    --exp_name FedAvg_LEAF_Reddit --seed 42 --device cpu \
     --dataset Reddit \
     --split_type pre --test_size 0.1 \
     --model_name NextWordLSTM --num_layers 2 --num_embeddings 10000 --embedding_size 256 --hidden_sizee 256 \

@@ -5,7 +5,7 @@
 ## NOTE: this is equivalent to Shakespeare dataset under LEAF benchmark
 ### Role and play Non-IID split
 python3 main.py \
-    --exp_name FedAvg_Shakespeare_NextChartLSTM --seed 42 --device cuda \
+    --exp_name FedAvg_Shakespeare_NextChartLSTM --seed 42 --device cpu \
     --dataset Shakespeare \
     --split_type pre --test_size 0.2 \
     --model_name NextCharLSTM --num_embeddings 80 --embedding_size 8 --hidden_size 256 --num_layers 2 \

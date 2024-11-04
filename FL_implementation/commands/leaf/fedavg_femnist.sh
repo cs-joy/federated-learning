@@ -2,7 +2,7 @@
 
 # FedAvg experiments for LEAF FEMNIST Dataset
 python 3 main.py \
-    --exp_name FEMNIST --seed 42 --device cuda \
+    --exp_name FEMNIST --seed 42 --device cpu \
     --dataset FEMNIST \
     --split_type pre --test_size 0.1 \
     --model_name FEMNISTCNN --resize 28 --hidden_size 64 \

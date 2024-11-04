@@ -4,7 +4,7 @@
 # FedAvg experiments for LEAF Sent140 dataset
 # Sampled 5% of raw dataset as started in the original paper, as total client is over 200K...!
 python3 main.py \
-    --exp_name FedAvg_LEAF_Sent140 --seed 42 --device cuda \
+    --exp_name FedAvg_LEAF_Sent140 --seed 42 --device cpu \
     --dataset Sent140 \
     --split_type pre --test_size 0.1 \
     --model_name NextCharLSTM --embedding_size 300 --hidden_size 128 --num_layers 2 \

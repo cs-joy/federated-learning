@@ -3,7 +3,7 @@
 
 # FedAvg experiments for LEAF Shakespeare dataset
 python3 main.py \
-    --exp_name FedAvg_LEAF_Shakespeare --seed 42 --device cuda \
+    --exp_name FedAvg_LEAF_Shakespeare --seed 42 --device cpu \
     --dataset Shakespeare \
     --split_type pre --test_size 0.1 \
     --model_name NextCharLSTM --num_embeddings 80 --embedding_size 8 --hidden_size 256 --num_layers 2 \
