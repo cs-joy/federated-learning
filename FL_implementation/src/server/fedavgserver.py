@@ -11,7 +11,7 @@ from importlib import import_module
 from collections import ChainMap, defaultdict
 
 from src import init_weights, TqdmToLogger, MetricManager
-from .base_server import BaseServer
+from .baseserver import BaseServer
 
 logger = logging.getLogger(__name__)
 

@@ -1,6 +1,6 @@
 import torch
 
-from .fed_avg_client import FedAvgClient
+from .fedavgclient import FedAvgClient
 from src import MetricManager
 
 
