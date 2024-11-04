@@ -109,3 +109,43 @@ if __name__ == "__main__":
     ###################
     # Model arguments #
     ###################
+    # federated learning settings
+    parser.add_argument('--eval_type', help= 'federated learning algorithm to be used', type=str,
+        choices= ['fedavg', 'fedsgd', 'fedprox', 'fedavgm'],
+        required= True
+    )
+    parser.add_argument('--eval_type', help= '''this evaluation type of a model trained from FL algorithm
+        - `local`: evaluation of personalization model on local hold-out dataset (i.e., evaluate personalized models using each clients\'s local evaluation set)
+        - `global`: evaluation of a global model on global hold-out dataset (i.e., evaluate the using separate holdout dataset located at the server)
+        - `both`: combination of `local` and `global` setting
+    ''', type= str,
+        choices= ['local', 'global', 'both'],
+        required= True)
+    parser.add_argument('--eval_fraction', help= 'fraction of randomly selected (unparticipated) clients for the evaluation (valid only if `eval_type` is `local` or `both`)', type= float, choices= [Range(1e-8, 1.)], default= 1.)
+    parser.add_argument('--eval_fraction', help= 'frquency of the evaluation (i.e., evaluate performance of a model every `eval_every` round)', type= int, default= 1)
+    parser.add_argument('--eval_metrics', help= 'metric(s) used for evaluation', type=str,
+        choices= [
+            'acc1', 'acc5', 'auroc', 'auprc', 'youdenj', 'f1', 'precision', 'recall',
+            'seqacc', 'mse', 'mae', 'mape', 'rmse', 'r2', 'd2'
+        ], nargs= '+', required= True
+    )
+    parser.add_argument('--K', help= 'number of total clients participating in federated training', type= int, default= 100)
+    parser.add_argument('--R', help= 'number of total federated learning rounds', type= int, default= 1000)
+    parser.add_argument('--C', help= 'sampling fraction of clients per round (full participation when 0 is passed)', type= float, choices= [Range(0., 1.)], default= 0.1)
+    parser.add_argument('--E', help= 'number of local epochs', type= int, default= 5)
+    parser.add_argument('--B', help= 'local batch size (full-batch training with zero is passed)', type= int, default= 10)
+    parser.add_argument('--beta1', help= 'server momentum factor', type= float, choices= [Range(0., 1.)], default= 0.)
+
+    # optimization arguments
+    parser.add_argument('--no_shuffle', help= 'do not shuffle data when training (if passed)', action= 'store_true')
+    parser.add_argument('--optimizer', help= 'type of optimization method (NOTE: should ne a sub-module of `torch.optim`, thus case-sensitive)', type= str, default= 'SGD', required= True)
+    parser.add_argument('--max_grad_norm', help= 'a constant required for gradient clipping', type= float, choices= [Range(0. , float('inf'))], default= 0.)
+    parser.add_argument('--weight_decay', help= 'weight decay (L2 penalty)', type= float, choices= [Range(0. , 1.)], default= 0)
+    parser.add_argument('--momentum', help= 'momentum factor', type= float, choices= [Range(0. , 1.)], default= 0.)
+    parser.add_argument('--lr', help= 'learning rate for local updates in each client', type= float, choices= [Range(0. , 100.)], default= 0.01, required= True)
+    parser.add_argument('--lr_decay', help= 'decay rate of learning rate', type= float, choices= [Range(0. , 1.)], default= 1.0)
+    parser.add_argument('--lr_decay_step', help= 'intervals of learning rate decay', type= int, default= 20)
+    parser.add_argument('--criterion', help= 'objective function (NOTE: should be a submodule of `torch.nn`, thus case-sensitive)', type= str, required= True)
+    parser.add_argument('--mu', help= 'constant for proximity regularization term (valid only if the algorithm is `fedprox`)', type= float, choices= [Range(0. , 1e6)], default= 0.01)
+
+    # TODO:
