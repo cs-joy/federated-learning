@@ -148,4 +148,37 @@ if __name__ == "__main__":
     parser.add_argument('--criterion', help= 'objective function (NOTE: should be a submodule of `torch.nn`, thus case-sensitive)', type= str, required= True)
     parser.add_argument('--mu', help= 'constant for proximity regularization term (valid only if the algorithm is `fedprox`)', type= float, choices= [Range(0. , 1e6)], default= 0.01)
 
-    # TODO:
+    # parse arguments
+    args = parser.parse_args()
+
+    # make path for saving losses and metrics and models
+    curr_time = time.strftime("%y%m%d_%H%M%S", time.localtime())
+    args.result_path = os.path.join(args.result_path, f'{args.exp_name}_{curr_time}')
+    if not os.path.exists(args.result_path):
+        os.makedirs(args.result_path)
+    
+    # make path for saving logs
+    if not os.path.exists(args.log_path):
+        os.makedirs(args.log_path)
+    
+    # initial logger
+    set_logger(f'{args.log_path}/{args.exp_name}_{curr_time}.log', args)
+
+    # check TensirBoard execution
+    tb = TensorBoardRunner(args.log_path, args.tb_host, args.tb_port) if args.use_tb else None
+
+    # define writer
+    writer = SummaryWriter(log_dir= os.path.join(args.log_path, f'{args.exp_name}_{curr_time}'), filename_suffix= f'_{curr_time}')
+
+    # run with program
+    torch.autograd.set_detect_anomaly(True)
+    try:
+        main(args, writer)
+        if args.use_tb:
+            tb.finalize()
+        sys.exit(0)
+    except Exception:
+        traceback.print_exc()
+        if args.use_tb:
+            tb.interrupt()
+        sys.exit(1)
