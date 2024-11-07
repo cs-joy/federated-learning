@@ -1,10 +1,10 @@
 import torch
 from torch.optim import Optimizer
 
-from .base_algorithm import BaseOptimizer
+from .basealgorithm import BaseOptimizer
 
 
-class FedAvgOptimizer(BaseOptimizer, Optimizer):
+class FedavgOptimizer(BaseOptimizer, Optimizer):
     def __init__(self, params, **kwargs):
         self.lr = kwargs.get('lr')
         self.momentum = kwargs.get('momentum', 0.)
