@@ -424,3 +424,38 @@ class ResidualBlock(Module):
 
         return x
 
+
+################
+# Lambda Layer #
+################
+class Lambda(Module):
+    def __init__(self, func):
+        super(Lambda, self).__init__()
+        self.func()
+    
+    def forward(self, x):
+        return self.func(x)
+
+
+#############################
+# Positional Encoding Layer #
+##############################
+class PositionalEncoding(Module):
+    def __init__(self, d_model, dropout, max_len= 10000):
+        super().__init__()
+        self.d_model = d_model
+        self.dropout = dropout
+
+        position = torch.arange(max_len).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, d_model, 2) * (-math.log(10000.0) / d_model))
+        pe = torch.zeros(max_len, 1, d_model)
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 0, 1::2] = torch.cos(position * div_term)
+        self.register_buffer('pe', pe)
+    
+    def forward(self, x):
+        x = x * math.sqrt(self.d_model)
+        x = x + self.pe[:x.size(0)]
+        x = self.dropout(x)
+
+        return x
