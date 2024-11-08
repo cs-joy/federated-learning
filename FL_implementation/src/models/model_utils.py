@@ -394,3 +394,33 @@ class MobileViTBlock(Module):
         x = self.conv4(x)
 
         return x
+
+
+##########
+# ResNet #
+##########
+class ResidualBlock(Module):
+    def __init__(self, in_planes, planes, stride= 1):
+        super(ResidualBlock, self).__init__()
+        self.features = Sequential(
+            Conv2d(in_planes, planes, kernel_size= 3, stride= stride, padding= 1, bias= False),
+            BatchNorm2d(planes),
+            ReLU(True),
+            Conv2d(planes, planes, kernel_size= 3, stride= 1, padding= 1, bias= False),
+            BatchNorm2d(planes)
+        )
+
+        self.shortcut = Identity()
+        if stride != 1 or in_planes != planes:
+            self.shortcut = Sequential(
+                Conv2d(in_planes, planes, kernel_size= 1, stride= stride, bias= False),
+                BatchNorm2d(planes)
+            )
+
+    
+    def forward(self, x):
+        x = self.features(x) + self.shortcut(x)
+        x = torch.nn.functional.relu(x)
+
+        return x
+
