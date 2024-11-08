@@ -348,4 +348,49 @@ class MV2Block(Module):
             return self.conv(x)
 
 
-# TODO
+class MobileViTBlock(Module):
+    def __init__(self, dim, depth, channel, kernel_size, patch_size, mlp_dim, dropout= 0.):
+        super().__init__()
+        self.patch_size = patch_size
+
+        self.conv1 = Sequential(
+            Conv2d(channel, channel, kernel_size, 1, 1, bias= False),
+            BatchNorm2d(channel),
+            SiLU(True)
+        )
+        self.conv2 = Sequential(
+            Conv2d(channel, dim, 1, 1, 0, bias= False),
+            BatchNorm2d(dim),
+            SiLU(True)
+        )
+        self.transformer = Transformer(dim, depth, 4, 8, mlp_dim, dropout)
+        self.conv3 = Sequential(
+            Conv2d(dim, channel, 1, 1, 0, bias= False)
+            BatchNorm2d(channel),
+            SiLU(True)
+        )
+        self.conv4 = Sequential(
+            Conv2d(2 * channel, channel, kernel_size, 1, 1, bias= False),
+            BatchNorm2d(channel),
+            SiLU(True)
+        )
+    
+    def forward(self, x):
+        y = x.clone()
+
+        # Local representations
+        x = self.conv1(x)
+        x = self.conv2(x)
+
+        # Global representations
+        _, _, h, w = x.shape
+        x = einpos.rearrange(x, 'b d (h ph) (w pw) -> b (ph pw) (h w) d', ph= self.patch_size, pw= self.patch_size)
+        x = self.transformer(x)
+        x = einpos.rearrane(x, 'b (ph pw) (h w) d -> b d (h ph) (w pw)', h= h // self.patch_size, w= w // self.patch_size, ph= self.patch_size, pw= self.patch_size)
+
+        # Fusion
+        x = self.conv3(x)
+        x = torch.cat((x, y), 1)
+        x = self.conv4(x)
+
+        return x
