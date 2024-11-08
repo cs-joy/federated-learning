@@ -365,7 +365,7 @@ class MobileViTBlock(Module):
         )
         self.transformer = Transformer(dim, depth, 4, 8, mlp_dim, dropout)
         self.conv3 = Sequential(
-            Conv2d(dim, channel, 1, 1, 0, bias= False)
+            Conv2d(dim, channel, 1, 1, 0, bias= False),
             BatchNorm2d(channel),
             SiLU(True)
         )
