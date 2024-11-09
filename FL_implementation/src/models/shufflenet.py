@@ -2,7 +2,7 @@ import torch
 
 from src.models.model_utils import ShuffleNetInvRes
 from torch.nn import Module, Sequential, Conv2d, BatchNorm2d, \
-                ReLU, MaxPool2d, AdaptiveAvgPool2d, Flatten
+                ReLU, MaxPool2d, AdaptiveAvgPool2d, Flatten, Linear
 
 
 
