@@ -148,3 +148,15 @@ class ClientsGroup(object):
                 data_shards2 = test_data[shards_id_test2 * shard_size_test: shards_id_test2 * shard_size_test + shard_size_test]
                 label_shards1 = test_data[shards_id_test1 * shard_size_test: shards_id_test1 * shard_size_test + shard_size_test]
                 label_shards2 = test_data[shards_id_test2 * shard_size_test: shards_id_test2 * shard_size_test + shard_size_test]
+                local_test_data, local_test_label = np.vstack((data_shards1, data_shards2)), np.vstack((label_shards1, label_shards2))
+                local_testlabel = torch.argmax(torch.tensor(local_test_label), dim= 1)
+                test_data_loader = DataLoader(TensorDataset(torch.tensor(local_test_data), torch.tensor(local_test_data)), batch_size= 100, shuffle= False)
+
+            # assign data to a client and put in the clients set
+            if i in malicious_nodes_set:
+                is_malicious = True
+                # add Gaussiam Noise
+            client_idx = f'client_{i+1}'
+
+            someone = Client(client_idx, is_malicious, self.noise_variance, TensorDataset(torch.tensor(local_train_data), torch.tensor(local_train_label)), test_data_loader, self.learning_rate, self.net, self.dev)
+            self.client_set[client_idx] = someone
