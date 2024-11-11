@@ -5,6 +5,8 @@ import platform
 import pickle
 import torch
 
+from WHDY_vanilla_malicious_involved_fedavg.getData import GetDataset
+
 
 
 class DatasetLoad(object):
