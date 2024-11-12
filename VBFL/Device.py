@@ -221,4 +221,84 @@ class Device:
 
         return signature
     
-    # TODO
+    def add_parse(self, new_peers):
+        if isinstance(new_peers, Device):
+            self.peer_list.add(new_peers)
+        else:
+            self.peer_list.update(new_peers)
+        
+    def remove_peers(self, peers_to_remove):
+        if isinstance(peers_to_remove, Device):
+            self.peer_list.discard(peers_to_remove)
+        else:
+            self.peer_list.difference_update(peers_to_remove)
+    
+    def online_switcher(self):
+        old_status = self.online
+        online_indicator = random.random()
+        if online_indicator < self.network_stability:
+            self.online = True
+            # if back online, update peer and resync chain
+            if old_status == False:
+                print(f"{self.idx} goes back online")
+                # update peer list
+                self.update_peer_list()
+                # resync chain
+                if self.pow_resync_chain():
+                    self.update_model_after_chain_resync()
+        
+        else:
+            self.online = False
+            print(f"{self.idx} goes offline.")
+        
+        return self.online
+    
+    def update_peer_list(self):
+        print(f"\n{self.idx} - {self.role} is updating peer list...")
+        old_peer_list = copy.copy(self.peer_list)
+        online_peers = set()
+        for peer in self.peer_list:
+            if peer.is_online():
+                online_peers.add(peer)
+        
+        # for online peers, suck in their peer list
+        for online_peer in online_peers:
+            self.add_parse(online_peers.return_peers())
+        
+        # remove itself from the peer_list if there is
+        self.remove_peers(self)
+        # remove malicious peers
+        removed_peers = []
+        potential_malicious_peer_set = set()
+        for peer in self.peer_list:
+            if peer.return_idx() in self.black_list:
+                potential_malicious_peer_set.add(peer)
+        self.remove_peers(potential_malicious_peer_set)
+        removed_peers.extend(potential_malicious_peer_set)
+
+        # print updated peer result
+        if old_peer_list == self.peer_list:
+            print("Peer list NOT chaned.")
+        else:
+            print("Peer list has been changed.")
+            added_peers = self.peer_list.difference(old_peer_list)
+            if potential_malicious_peer_set:
+                print("These malicious peers are removed!")
+                for peer in removed_peers:
+                    print(f"d_{peer.return_idx().split('_')[-1]} - {peer.return_role()[0]}", end=', ')
+                print()
+            if added_peers:
+                print("These peers are added")
+                for peer in added_peers:
+                    print(f"d_{peer.return_idx().split('_')[-1]} - {peer.return_role()[0]}", end= ', ')
+                print()
+            print("Final peer list:")
+            for peer in self.peer_list:
+                print(f"d_{peer.return_idx().split('_')[-1]} - {peer.return_role()[0]}", end= ', ')
+            print()
+        # WILL ALWAYS RETURN AS OFFLINE PEERS WON'T BE REMOVED ANY MORE, UNLESS ALL PEERS ARE MALICIOUS...but then it should not register with any other peer. Original purpose - if peer_list ends up empty, randomly register with another device
+        return False if not self.peer_list else True
+
+    def check_pow_proof(self, block_to_check):
+        pass
+        # TODO
