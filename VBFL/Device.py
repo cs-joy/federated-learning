@@ -300,5 +300,52 @@ class Device:
         return False if not self.peer_list else True
 
     def check_pow_proof(self, block_to_check):
-        pass
-        # TODO
+        # remove its block hash(compute_hash() by default) to verify pow_proof as block hash was set after pow
+        pow_proof = block_to_check(return_pow_proof())
+        # print("pow_proof", pow_proof)
+        # print("compute_hash", block_to_check.compute_hash())
+        return pow_proof.startswith('0' * self.pow_difficulty) and pow_proof == block_to_check.compute_hash()
+    
+    def check_chain_validity(self, chain_to_check):
+        chain_len = chain_to_check.return_chain_length()
+        if chain_len == 0 or chain_len == 1:
+            pass
+        else:
+            chain_to_check = chain_to_check.return_chain_structure()
+            for block in chain_to_check[1:]:
+                if self.check_pow_proof(block) and block.return_previous_block_hash() == chain_to_check[chain_to_check.index(block) - 1].compute_hash(hash_entire_block= True):
+                    pass
+                else:
+                    return False
+        
+        return True
+    
+def accumulate_chain_stake(self, chain_to_accumulate):
+    accumulated_stake = 0
+    chain_to_accumulate = chain_to_accumulate.return_chain_structure()
+    for block in chain_to_accumulate:
+        accumulated_stake += self.device_dict[block.return_mined_by()].return_stake()
+    
+    return accumulated_stake
+
+def resync_chain(self, mining_consensus):
+    if self.not_resync_chan:
+        return  # temporary workaround to save GPU memory
+    if mining_consensus == 'PoW':
+        self.pow_resync_chain()
+    else:
+        self.pos_resync_chain()
+
+def pos_resync_chain(self):
+    print(f"{self.role} {self.idx} is looking for a chain with higest accumulated miner's stake in the network...")
+    highest_stake_chain = None
+    updated_from_peer = None
+    curr_chain_stake = self.accumulate_chain_stake(self.return_blockchain_object())
+    for peer in self.peer_list:
+        if peer.is_online():
+            peer_chain = peer.return_blockchain_object()
+            peer_chain_stake = self.accumulate_chain_stake(peer_chain)
+            if peer_chain_stake > curr_chain_stake:
+                print(f"A chain from {peer.return_idx} with total stake {peer_chain_stake} has been found (> currently compared with chain stake {curr_chain_stake}) and verified.")
+                # Higher stake valid chain found
+                # TODO:
