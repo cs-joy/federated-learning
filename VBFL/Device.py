@@ -348,4 +348,57 @@ def pos_resync_chain(self):
             if peer_chain_stake > curr_chain_stake:
                 print(f"A chain from {peer.return_idx} with total stake {peer_chain_stake} has been found (> currently compared with chain stake {curr_chain_stake}) and verified.")
                 # Higher stake valid chain found
-                # TODO:
+                curr_chain_stake = peer_chain_stake
+                highest_stake_chain = peer_chain
+                updated_from_peer = peer.return_idx()
+            else:
+                print(f"A chain from {peer.return_idx()} with higher stake has been found BUT NOT verified. Skipped this chain for syncing.")
+    
+    if highest_stake_chain:
+        # compare chain difference
+        highest_stake_chain_structure = highest_stake_chain.return_chain_structure()
+        # need more efficient mechanism which is to reverse updates by # of blocks
+        self.return_blockchain_object().replace_chain(highest_stake_chain_structure)
+        print(f"{self.idx} chain resynced from peer {updated_from_peer}")
+        # return block_iter
+        
+        return True
+    print("Chain not synced.")
+
+def pow_resync_chain(self):
+    print(f"{self.role} {self.idx} is looking for longer chain in the network.")
+    longest_chain = None
+    updated_from_peer = None
+    curr_chain_len = self.return_blockchain_object().return_chain_length()
+    for peer in self.peer_list:
+        if peer.is_online():
+            peer_chain = peer.return_blockchain_object()
+            if peer_chain.return_chain_length() > curr_chain_len:
+                if self.check_chain_validity(peer):
+                    print(f"A longer chain from {peer.return_idx()} with chain length {peer.return_chain_length()} has been found (> currently compared chain length {curr_chain_len} and verified.)")
+                    # Longer valid chain found!
+                    curr_chain_len = peer_chain.return_chain_length()
+                    lengest_chain = peer_chain
+                    updated_from_peer = peer.return_idx()
+
+                else:
+                    print(f"A longer chain from {peer.return_idx()} has been found BUT NOTZ verified. Skipped this chain for syncing.")
+
+            if longest_chain:
+                # compare chain difference
+                longest_chain_structure = longest_chain.return_chain_structure()
+                # need more efficient mecahnism which is to reverse updates by # of blocks
+                self.return_blockchain_object().replace_chain(longest_chain_structure)
+                print(f"{self.idx} chain resynced from peer {updated_from_peer}.")
+                # return block_iter
+                
+                return True
+            print("Chain not synced.")
+            return False
+
+def receive_rewards(self, rewards):
+    self.rewards += rewards
+
+def verify_miner_transaction_by_signature(self, transaction_to_verify, miner_device_idx):
+    if miner_device_idx in self.self.black_list:
+        print(f"{miner_device_idx} is in miner's blacklist. Transaction won't get verified.")
