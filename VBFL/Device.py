@@ -320,85 +320,145 @@ class Device:
         
         return True
     
-def accumulate_chain_stake(self, chain_to_accumulate):
-    accumulated_stake = 0
-    chain_to_accumulate = chain_to_accumulate.return_chain_structure()
-    for block in chain_to_accumulate:
-        accumulated_stake += self.device_dict[block.return_mined_by()].return_stake()
+    def accumulate_chain_stake(self, chain_to_accumulate):
+        accumulated_stake = 0
+        chain_to_accumulate = chain_to_accumulate.return_chain_structure()
+        for block in chain_to_accumulate:
+            accumulated_stake += self.device_dict[block.return_mined_by()].return_stake()
     
-    return accumulated_stake
+        return accumulated_stake
 
-def resync_chain(self, mining_consensus):
-    if self.not_resync_chan:
-        return  # temporary workaround to save GPU memory
-    if mining_consensus == 'PoW':
-        self.pow_resync_chain()
-    else:
-        self.pos_resync_chain()
+    def resync_chain(self, mining_consensus):
+        if self.not_resync_chan:
+            return  # temporary workaround to save GPU memory
+        if mining_consensus == 'PoW':
+            self.pow_resync_chain()
+        else:
+            self.pos_resync_chain()
 
-def pos_resync_chain(self):
-    print(f"{self.role} {self.idx} is looking for a chain with higest accumulated miner's stake in the network...")
-    highest_stake_chain = None
-    updated_from_peer = None
-    curr_chain_stake = self.accumulate_chain_stake(self.return_blockchain_object())
-    for peer in self.peer_list:
-        if peer.is_online():
-            peer_chain = peer.return_blockchain_object()
-            peer_chain_stake = self.accumulate_chain_stake(peer_chain)
-            if peer_chain_stake > curr_chain_stake:
-                print(f"A chain from {peer.return_idx} with total stake {peer_chain_stake} has been found (> currently compared with chain stake {curr_chain_stake}) and verified.")
-                # Higher stake valid chain found
-                curr_chain_stake = peer_chain_stake
-                highest_stake_chain = peer_chain
-                updated_from_peer = peer.return_idx()
-            else:
-                print(f"A chain from {peer.return_idx()} with higher stake has been found BUT NOT verified. Skipped this chain for syncing.")
-    
-    if highest_stake_chain:
-        # compare chain difference
-        highest_stake_chain_structure = highest_stake_chain.return_chain_structure()
-        # need more efficient mechanism which is to reverse updates by # of blocks
-        self.return_blockchain_object().replace_chain(highest_stake_chain_structure)
-        print(f"{self.idx} chain resynced from peer {updated_from_peer}")
-        # return block_iter
-        
-        return True
-    print("Chain not synced.")
-
-def pow_resync_chain(self):
-    print(f"{self.role} {self.idx} is looking for longer chain in the network.")
-    longest_chain = None
-    updated_from_peer = None
-    curr_chain_len = self.return_blockchain_object().return_chain_length()
-    for peer in self.peer_list:
-        if peer.is_online():
-            peer_chain = peer.return_blockchain_object()
-            if peer_chain.return_chain_length() > curr_chain_len:
-                if self.check_chain_validity(peer):
-                    print(f"A longer chain from {peer.return_idx()} with chain length {peer.return_chain_length()} has been found (> currently compared chain length {curr_chain_len} and verified.)")
-                    # Longer valid chain found!
-                    curr_chain_len = peer_chain.return_chain_length()
-                    lengest_chain = peer_chain
+    def pos_resync_chain(self):
+        print(f"{self.role} {self.idx} is looking for a chain with higest accumulated miner's stake in the network...")
+        highest_stake_chain = None
+        updated_from_peer = None
+        curr_chain_stake = self.accumulate_chain_stake(self.return_blockchain_object())
+        for peer in self.peer_list:
+            if peer.is_online():
+                peer_chain = peer.return_blockchain_object()
+                peer_chain_stake = self.accumulate_chain_stake(peer_chain)
+                if peer_chain_stake > curr_chain_stake:
+                    print(f"A chain from {peer.return_idx} with total stake {peer_chain_stake} has been found (> currently compared with chain stake {curr_chain_stake}) and verified.")
+                    # Higher stake valid chain found
+                    curr_chain_stake = peer_chain_stake
+                    highest_stake_chain = peer_chain
                     updated_from_peer = peer.return_idx()
-
                 else:
-                    print(f"A longer chain from {peer.return_idx()} has been found BUT NOTZ verified. Skipped this chain for syncing.")
+                    print(f"A chain from {peer.return_idx()} with higher stake has been found BUT NOT verified. Skipped this chain for syncing.")
+    
+        if highest_stake_chain:
+            # compare chain difference
+            highest_stake_chain_structure = highest_stake_chain.return_chain_structure()
+            # need more efficient mechanism which is to reverse updates by # of blocks
+            self.return_blockchain_object().replace_chain(highest_stake_chain_structure)
+            print(f"{self.idx} chain resynced from peer {updated_from_peer}")
+            # return block_iter
+        
+            return True
+        print("Chain not resynced.")
+        return False
 
-            if longest_chain:
-                # compare chain difference
-                longest_chain_structure = longest_chain.return_chain_structure()
-                # need more efficient mecahnism which is to reverse updates by # of blocks
-                self.return_blockchain_object().replace_chain(longest_chain_structure)
-                print(f"{self.idx} chain resynced from peer {updated_from_peer}.")
-                # return block_iter
+    def pow_resync_chain(self):
+        print(f"{self.role} {self.idx} is looking for longer chain in the network.")
+        longest_chain = None
+        updated_from_peer = None
+        curr_chain_len = self.return_blockchain_object().return_chain_length()
+        for peer in self.peer_list:
+            if peer.is_online():
+                peer_chain = peer.return_blockchain_object()
+                if peer_chain.return_chain_length() > curr_chain_len:
+                    if self.check_chain_validity(peer):
+                        print(f"A longer chain from {peer.return_idx()} with chain length {peer.return_chain_length()} has been found (> currently compared chain length {curr_chain_len} and verified.)")
+                        # Longer valid chain found!
+                        curr_chain_len = peer_chain.return_chain_length()
+                        lengest_chain = peer_chain
+                        updated_from_peer = peer.return_idx()
+
+                    else:
+                        print(f"A longer chain from {peer.return_idx()} has been found BUT NOTZ verified. Skipped this chain for syncing.")
+
+                if longest_chain:
+                    # compare chain difference
+                    longest_chain_structure = longest_chain.return_chain_structure()
+                    # need more efficient mecahnism which is to reverse updates by # of blocks
+                    self.return_blockchain_object().replace_chain(longest_chain_structure)
+                    print(f"{self.idx} chain resynced from peer {updated_from_peer}.")
+                    # return block_iter
                 
-                return True
-            print("Chain not synced.")
+                    return True
+                print("Chain not resynced.")
+                return False
+
+    def receive_rewards(self, rewards):
+        self.rewards += rewards
+
+    def verify_miner_transaction_by_signature(self, transaction_to_verify, miner_device_idx):
+        if miner_device_idx in self.self.black_list:
+            print(f"{miner_device_idx} is in miner's blacklist. Transaction won't get verified.")
             return False
+        if self.check_signature:
+            transaction_before_signed = copy.deepcopy(transaction_to_verify)
+            del transaction_before_signed["miner_signature"]
+            modulus = transaction_to_verify['miner_rsa_pub_key']['modulus']
+            pub_key = transaction_to_verify['miner_rsa_pub_key']['pub_key']
+            signature = transaction_to_verify['miner_signature']
+            # verify
+            hash = int.from_bytes(sha256(str(sorted(transaction_before_signed.items())).encode('utf-8')).digest(), byteorder= 'big')
+            hashFromSignature = pow(signature, pub_key, modulus)
+            if hash == hashFromSignature:
+                print(f"A transaction recorded by miner {miner_device_idx} in the block is verified!")
+                return True
+            else:
+                print(f"Signature invalid: Transaction recored by {miner_device_idx} is NOT verified.")
+                return False
+        else:
+            print(f"A transaction recorded by miner {miner_device_idx} in the block is verified!")
+            return True
 
-def receive_rewards(self, rewards):
-    self.rewards += rewards
-
-def verify_miner_transaction_by_signature(self, transaction_to_verify, miner_device_idx):
-    if miner_device_idx in self.self.black_list:
-        print(f"{miner_device_idx} is in miner's blacklist. Transaction won't get verified.")
+    def verify_block(self, block_to_verify, sending_miner):
+        if not self.online_switcher():
+            print(f"{self.idx} goes offline when verifying a block!")
+            return False, False
+        verification_time = time.time()
+        mined_by = block_to_verify.return_mined_by()
+        if sending_miner in self.black_list:
+            print(f"The miner propagating/sending this block {sending_miner} is in {self.idx}'s black list. Block will not be verified.")
+            return False, False
+        # check if the proof is valid(verify_block_hash)
+        if not self.check_pow_proof(block_to_verify):
+            print(f"PoW proof of the block from miner {self.idx} is not verified.")
+            return False, False
+        # # check if miner's signature is valid
+        if self.check_signature:
+            signature_dict = block_to_verify.return_miner_rsa_pub_key()
+            modulus = signature_dict['modulus']
+            pub_key = signature_dict['pub_key']
+            signature = block_to_verify.return_signature()
+            # verify signature
+            block_to_verify_before_sign = copy.deepcopy(block_to_verify)
+            block_to_verify_before_sign.remove_signature_for_verification()
+            hash = int.from_bytes(sha256(str(block_to_verify_before_sign.__dict__).encode('utf-8')).digest(), byteorder= 'big')
+            hashFromSignature = pow(signature, pub_key, modulus)
+            if hash != hashFromSignature:
+                print(f"Signature of the block sent by miner {sending_miner} mined by miner {mined_by} is not verified by {self.role} {self.idx}")
+                return False, False
+            # check previous hash based on own chain
+            last_block = self.return_blockchain_object().return_last_block()
+            if last_block is not None:
+                # check if the previous_hash referred in the block and the hash of latest block in the chain match
+                last_block_hash = last_block.compute_hash(hash_entire_block= True)
+                if block_to_verify.return_previous_block_hash() != last_block_hash:
+                    print(f"Block sent by miner {sending_miner} mined by miner {mined_by} has the previous hash recorded as {block_to_verify.return_previous_block_hash()}, but the last block's hash in chain is {last_block_hash}. This is possibly due to a forking event from last round. Block not verified and won't be added. Device need to resync chain next round.")
+                    return False, False
+        # All verifications done.
+        print(f"Block accepted from miner {sending_miner} mined by {mined_by} has been verified by {self.idx}!")
+        verification_time = (time.time() - verification_time) / self.computation_power
+        return block_to_verify, verification_time
