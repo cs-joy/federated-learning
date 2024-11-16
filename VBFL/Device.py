@@ -462,3 +462,51 @@ class Device:
         print(f"Block accepted from miner {sending_miner} mined by {mined_by} has been verified by {self.idx}!")
         verification_time = (time.time() - verification_time) / self.computation_power
         return block_to_verify, verification_time
+    
+    def add_block(self, block_to_add):
+        self.return_blockchain_object().append_block(block_to_add)
+        print(f"d_{self.idx.split('_')[-1]} - {self.role[0]} has appened a block to its chain. Chain length now - {self.return_blockchain_object().return_chain_length()}")
+        # TODO delete has_added_block
+        # self.has_added_block = True
+        self.the_added_block = block_to_add
+
+        return True
+    
+    # also accumulate rewards here
+    def process_blocks(self, block_to_process, log_files_folder_path, conn, conn_cursor, when_resync= False):
+        # collect usable updated params, malicious nodes identification, get rewards and do local updates
+        process_time = time.time()
+        if not self.online_switcher():
+            print(f"{self.role} {self.idx} goes offline when processing the added block. Model not updated and rewards information not upgraded. Outdated informatiopn may be obtained by this node if it never resyncs to a different chain.") # may need to set up a flag indicating if a block has been processed
+        if block_to_process:
+            mined_by = block_to_process.return_mined_by()
+            if mined_by in self.black_list:
+                # in this system black list is also consistent across devices as it is calculated based on the informationo on chain, but individual device can decide its validation/verification mechanism and has its own
+                print(f"The added block is mined by miner {block_to_process.return_mined_by()}, which is in this device's black list. Block will not be processed.")
+            else:
+                # process validator sig valid transactions
+                # used to count positive and negative transactions worker by worker, select the transaction to do global update and identify potential malicious worker
+                self_rewards_accumulator = 0
+                valid_transactions_records_by_worker = {}
+                valid_validator_sig_worker_transactions_in_block = block_to_process.return_transactions()['valid_validator_sig_transactions']
+                comm_round = block_to_process.return_block_idx()
+                self.active_worker_record_by_round[comm_round] = set()
+                for valid_validator_sig_worker_transaction in valid_validator_sig_worker_transactions_in_block:
+                    # verify miner's signature (miner does not get reward for receiving and aggregating)
+                    if self.verify_miner_transaction_by_signature(valid_validator_sig_worker_transaction, mined_by):
+                        worker_device_idx = valid_validator_sig_worker_transaction['worker_device_idx']
+                        self.active_worker_record_by_round[comm_round].add(worker_device_idx)
+                        if not worker_device_idx in valid_transactions_records_by_worker.keys():
+                            valid_transactions_records_by_worker[worker_device_idx] = {}
+                            valid_transactions_records_by_worker[worker_device_idx]['positive_epochs'] = set()
+                            valid_transactions_records_by_worker[worker_device_idx]['negative_epochs'] = set()
+                            valid_transactions_records_by_worker[worker_device_idx]['all_valid_epochs'] = set()
+                            valid_transactions_records_by_worker[worker_device_idx]['finally_used_params'] = None
+                        # epoch of this worker's local update
+                        local_epoch_seq = valid_validator_sig_worker_transaction['local_total_accumulated_epochs_this_round']
+                        positive_direction_validators = valid_validator_sig_worker_transaction['positive_direction_validators']
+                        negative_direction_validators = valid_validator_sig_worker_transaction['negative_direction_validators']
+                        if len(positive_direction_validators) >= len(negative_direction_validators):
+                            # worker transaction can be used
+                            pass
+                            # TODO
