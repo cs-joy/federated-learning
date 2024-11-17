@@ -473,7 +473,7 @@ class Device:
         return True
     
     # also accumulate rewards here
-    def process_blocks(self, block_to_process, log_files_folder_path, conn, conn_cursor, when_resync= False):
+    def process_block(self, block_to_process, log_files_folder_path, conn, conn_cursor, when_resync= False):
         # collect usable updated params, malicious nodes identification, get rewards and do local updates
         process_time = time.time()
         if not self.online_switcher():
@@ -508,5 +508,68 @@ class Device:
                         negative_direction_validators = valid_validator_sig_worker_transaction['negative_direction_validators']
                         if len(positive_direction_validators) >= len(negative_direction_validators):
                             # worker transaction can be used
-                            pass
-                            # TODO
+                            valid_transactions_records_by_worker[worker_device_idx]['positive_epochs'].add(local_epoch_seq)
+                            valid_transactions_records_by_worker[worker_device_idx]['all_valid_epochs'].add(local_epoch_seq)
+                            # see if this is the latest epoch from this worker
+                            if local_epoch_seq == max(valid_transactions_records_by_worker[worker_device_idx]['all_valid_epochs']):
+                                valid_transactions_records_by_worker[worker_device_idx]['finally_used_params'] = valid_validator_sig_worker_transaction['local_updates_params']
+                            # give rewards to this worker
+                            if self.idx == worker_device_idx:
+                                self_rewards_accumulator += valid_validator_sig_worker_transaction['local_updates_rewards']
+                        else:
+                            if self.malicious_updates_discount:
+                                # worker transaction voted negative and has to be applied for a discount
+                                valid_transactions_records_by_worker[worker_device_idx]['negative_epochs'].add(local_epoch_seq)
+                                valid_transactions_records_by_worker[worker_device_idx]['all_valid_epochs'].add(local_epoch_seq)
+                                # see if this is the latest epoch from this worker
+                                if local_epoch_seq == max(valid_transactions_records_by_worker[worker_device_idx]['all_valid_epochs']):
+                                    # apply discount
+                                    discounted_valid_validator_sig_worker_transaction_local_updates_params = copy.deepcopy(valid_transactions_records_by_worker['local_updates_params'])
+                                    for var in discounted_valid_validator_sig_worker_transaction_local_updates_params:
+                                        discounted_valid_validator_sig_worker_transaction_local_updates_params[var] *= self.malicious_updates_discount
+                                    valid_transactions_records_by_worker[worker_device_idx]['finally_used_params'] = discounted_valid_validator_sig_worker_transaction_local_updates_params
+                                # worker receive discounted rewards for negative update
+                                if self.idx == worker_device_idx:
+                                    self_rewards_accumulator += valid_transactions_records_by_worker['local_updates_rewards'] * self.malicious_updates_discount
+                            else:
+                                # discount specified as 0, worker transaction voted negative and can not be used
+                                valid_transactions_records_by_worker[worker_device_idx]['negative_epochs'].add(local_epoch_seq)
+                                # worker does not receive rewards for negative update
+                        # give rewards to validators and the miner in this transaction
+                        for validator_record in positive_direction_validators + negative_direction_validators:
+                            if self.idx == validator_record['validator']:
+                                self_rewards_accumulator += validator_record['validation_rewards']
+                            if self.idx == validator_record['miner_device_idx']:
+                                self_rewards_accumulator += validator_record['miner_rewards_for_this_tx']
+                    else:
+                        print(f"One validator transaction miner sig found invalid in this block. {self.idx} will drop this block and roll back rewards information")
+                        return
+                    
+                # identify potentially malicious worker
+                self.untrustworthy_workers_record_by_comm_round[comm_round] = set()
+                for worker_idx, local_updates_direction_records in valid_transactions_records_by_worker.item():
+                    if len(local_updates_direction_records['negative_epochs']) > len(local_updates_direction_records['positive_epochs']):
+                        self.untrustworthy_workers_record_by_comm_round[comm_round].add(worker_idx)
+                        kick_out_accumulator = 1
+                        # check previous rounds
+                        for comm_round_to_check in range(comm_round - self.knock_out_rounds + 1, comm_round):
+                            if comm_round_to_check in self.untrustworthy_workers_record_by_comm_round.keys():
+                                if worker_idx in self.untrustworthy_workers_record_by_comm_round[comm_round_to_check]:
+                                    kick_out_accumulator += 1
+                        if kick_out_accumulator == self.knock_out_rounds:
+                            # kick out
+                            self.black_list.add(worker_idx)
+                            # is it right?
+                            if when_resync:
+                                msg_end = " when resyncing!\n"
+                            else:
+                                msg_end = "!\n"
+                            if self.device_dict[worker_idx].return_is_malicious():
+                                msg = f'{self.idx} has successfully identified a malicious worker device {worker_idx} in comm_round {comm_round}{msg_end}'
+                                with open(f'{log_files_folder_path}/correctly_kicked_workers.txt', 'a') as file:
+                                    file.write(msg)
+                                conn_cursor.execute('INSERT INTO malicious_workers_log VALUE (? ? ? ? ? ?)', (worker_idx, 1, self.idx, "", comm_round, when_resync))
+                                conn.commit()
+                            else:
+                                msg = f'WARNING: {self.idx} has mistakenly regards {worker_idx} as malicious worker device in comm_round {comm_round}{msg_end}'
+                                # TODO
