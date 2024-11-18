@@ -475,7 +475,7 @@ class Device:
     # also accumulate rewards here
     def process_block(self, block_to_process, log_files_folder_path, conn, conn_cursor, when_resync= False):
         # collect usable updated params, malicious nodes identification, get rewards and do local updates
-        process_time = time.time()
+        processing_time = time.time()
         if not self.online_switcher():
             print(f"{self.role} {self.idx} goes offline when processing the added block. Model not updated and rewards information not upgraded. Outdated informatiopn may be obtained by this node if it never resyncs to a different chain.") # may need to set up a flag indicating if a block has been processed
         if block_to_process:
@@ -616,3 +616,47 @@ class Device:
                         print(f'One validator transaction miner sig found invalid in this block. {self.idx} will drop this block and roll back rewards information')
                         return
                     # give rewards to the miner in this transaction
+                    if self.idx == invalid_validator_sig_worker_transaction['miner_device_idx']:
+                        self_rewards_accumulator += invalid_validator_sig_worker_transaction['miner_rewards_for_this_tx']
+                # miner gets mining rewrads
+                if self.idx == mined_by:
+                    self_rewards_accumulator += block_to_process.return_mining_rewards()
+                # set received rewards this round based on info from this block
+                self.receive_rewards(self_rewards_accumulator)
+                print(f"{self.role} {self.idx} has received total {self_rewards_accumulator} rewards for this comm round.")
+                # collect usable worker updates and do global updates
+                finally_used_local_params = []
+                # record True positive, False positive, True Negative and False Negative for identified workers
+                TP, FP, TN, FN = 0, 0, 0, 0
+                for worker_device_idx, local_params_record in valid_transactions_records_by_worker.items():
+                    is_worker_malicius = self.device_dict[worker_device_idx].return_is_malicious()
+                    if local_params_record['finally_used_params']:
+                        # identified as benign worker
+                        finally_used_local_params.append(worker_device_idx, local_params_record['finally_used_params']) # could be None
+                        if not is_worker_malicius:
+                            TP += 1
+                        else:
+                            FP += 1
+                    else:
+                        # identified as malicious worker
+                        if is_worker_malicius:
+                            TN += 1
+                        else:
+                            FN += 1
+                if self.online_switcher():
+                    self.global_update(finally_used_local_params)
+                else:
+                    print(f"Unfortunately, {self.role} {self.idx} goes offline when it's doing global_updates.")
+        malicious_worker_validation_log_path = f'{log_files_folder_path}/comm_{comm_round}/malicius_worker_validation_log.txt'
+        if not os.path.exists(malicious_worker_validation_log_path):
+            with open(malicious_worker_validation_log_path, 'w') as file:
+                accuracy = (TP + TN) / (TP + TN + FP + FN) if (TP + TN) else 0
+                precision = TP / (TP + FP) if TP else 0
+                recall = TP / (TP + FN) if TP else 0
+                f1 = precision * recall / (precision + recall) if precision * recall else 0
+                file.write(f"In comm_{comm_round} of validating workers, TP = {TP}, FP = {FP}, TN = {TN}, FN = {FN}. \
+                    \nAccuracy = {accuracy}, Precision = {precision}, Recall = {recall}, F1-Score = {f1}")
+
+        processing_time = (time.time() - processing_time) / self.computation_power
+        
+        return processing_time
