@@ -572,4 +572,47 @@ class Device:
                                 conn.commit()
                             else:
                                 msg = f'WARNING: {self.idx} has mistakenly regards {worker_idx} as malicious worker device in comm_round {comm_round}{msg_end}'
-                                # TODO
+                                with open(f"{log_files_folder_path}/mistakenly_kicked_workers.txt", 'a') as file:
+                                    file.write(msg)
+                                conn_cursor.execute("INSERT INTO malicious_workers_log VALUES (?, ?, ?, ?, ?, ?)", (worker_idx, 0, "", self.idx, comm_round, when_resync))
+                                conn.commit()
+                            print(msg)
+
+                            # cont = print("Press ENTER to continue")
+
+                # identify potentially compromised validator
+                self.untrustworthy_validators_record_by_comm_round[comm_round] = set()
+                invalid_validator_sig_worker_transactions_in_block = block_to_process.return_transactions()['invalid_validator_sig_transactions']
+                for invalid_validator_sig_worker_transaction in invalid_validator_sig_worker_transactions_in_block:
+                    if self.verify_miner_transaction_by_signature(invalid_validator_sig_worker_transaction, mined_by):
+                        validator_device_idx = invalid_validator_sig_worker_transaction['validator']
+                        self.untrustworthy_validators_record_by_comm_round[comm_round].add(validator_device_idx)
+                        kick_out_accumulator = 1
+                        # check previous rounds
+                        for comm_round_to_check in range(comm_round - self.knock_out_rounds + 1, comm_round):
+                            if comm_round_to_check in self.untrustworthy_validators_record_by_comm_round[comm_round_to_check]:
+                                kick_out_accumulator += 1
+                        if kick_out_accumulator == self.knock_out_rounds:
+                            # kick out
+                            self.black_list.add(validator_device_idx)
+                            print(f"{validator_device_idx} has been regarded as a compromised validator by {self.idx} in {comm_round}.")
+                            # actually, we did not let validator do malicious thing if is_malicious=1 is set to this device. In the submission of 2020/10, we only focus on catching malicious worker
+                            # is it right?
+                            # if when_resync:
+                            #     msg = ' when resyncing!\n'
+                            # else:
+                            #     msg_end = '!\n'
+                            # if self.device_dict[validator_device_idx].return_is_malicious():
+                            #     msg = f'{self.idx} has successfully identified a compromised validator device {validator_device_idx} in comm_round {comm_round}{msg_end}'
+                            #     with open(f'{log_files_folder_path}/correctly_kicked_validators.txt', 'a') as file:
+                            #         file.write(msg)
+                            # else:
+                            #     msg = f'WARNING: {self.idx} has mistakenly regard {validator_device_idx} as a compromised validator device in comm_round {comm_round}{msg_end}'
+                            #     with open(f'{log_files_folder_path}/mistakenly_kicked_validators.txt', 'a') as file:
+                            #         file.write(msg)
+                            # print(msg)
+                            # cont = print("Press ENTER to continue")
+                    else:
+                        print(f'One validator transaction miner sig found invalid in this block. {self.idx} will drop this block and roll back rewards information')
+                        return
+                    # give rewards to the miner in this transaction
