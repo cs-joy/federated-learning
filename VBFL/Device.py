@@ -769,5 +769,50 @@ class Device:
             with open(f"{log_files_folder_path_comm_round}/comm_{comm_round}_variance_of_noises.txt", "a") as file:
                 file.write(f"{self.return_idx()} {self.return_role()} {is_malicious_node} noise variances: {self.variance_of_noises}\n")
         # record accuracies to find good -vh
-        with open(f"") as file:
-            file.write()
+        with open(f"{log_files_folder_path_comm_round}/worker_final_local_accuracies_comm_{comm_round}.txt", "a") as file:
+            file.write(f"{self.return_idx()} {self.return_role()} {is_malicious_node}: {self.validate_model_weights(self.net.state_dict())}\n")
+        print(f"Done {local_epochs} epoch(s) and total {self.local_total_epoch} epochs")
+        self.local_train_parameters = self.net.state_dict()
+        
+        return self.local_update_time
+    
+
+    # used to simulate time waste when worker goes offline during transmission to validator
+    def waste_one_epoch_local_update_time(self, opti):
+        if self.computation_power == 0:
+            return float('inf'), None
+        else:
+            validation_net = copy.deepcopy(self.net)
+            currently_used_lr = 0.01
+            if param_group in self.opti.param_groups:
+                currently_used_lr = param_group['lr']
+            # by default use SGD. Did not implement others
+            if opti == 'SGD':
+                validation_opti = optim.SGD(validation_net.parameters(), lr=currently_used_lr, )
+            local_update_time = time.time()
+            for data, label in self.train_dl:
+                data, label = data.to(self.dev), label.to(self.dev)
+                preds = validation_net(data)
+                loss = self.loss_func(preds, label)
+                loss.backward()
+                validation_opti.step()
+                validation_opti.zero_grad()
+            
+            return (time.time() - local_update_time)/self.computation_power, validation_net.state_dict()
+    
+    def set_accuracy_this_round(self, accuracy):
+        self.accuracy_this_round = accuracy
+    
+    def return_accuracy_this_round(self):
+        return self.accuracy_this_round
+    
+    def return_link_speed(self):
+        return self.link_speed
+    
+    def return_local_updates_and_signature(self, comm_round):
+        # local_total_accumulated_epochs_this_round also stands for the lastest_epoch_seq for this transaction(local) params are calculated after this amount of local epochs in this round
+        # last_local_iteration(s)_spent_time may be recorded to determine calculating time? But what if nodes do not wish to disclose its computation power
+        local_updates_dict = {'worker_device_idx': self.idx, 'in_round_number': comm_round, 'local_updates_params': copy.deepcopy(self.local_train_parameters), 'local_updates_rewards': self.local_updates_rewards_per_transaction, 'local_iteration(s)_spent_time': self.local_update_time, 'local_total_accumulated_epochs_this_round': self.local_total_epoch, 'worker_rsa_pub_key': self.return_rsa_pub_key()}
+        local_updates_dict['worker_signature'] = self.sign_msg(sorted(local_updates_dict.items()))
+
+        return local_updates_dict
