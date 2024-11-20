@@ -79,7 +79,7 @@ class Device:
         self.worker_accuracy_across_records = {}
         self.has_added_block = False
         self.the_added_block = None
-        self._is_malicious = is_malicious
+        self.is_malicious = is_malicious
         self.noise_variance = noise_variance
         self.check_signature = check_signature
         self.not_resync_chain = not_resync_chain
@@ -301,7 +301,7 @@ class Device:
 
     def check_pow_proof(self, block_to_check):
         # remove its block hash(compute_hash() by default) to verify pow_proof as block hash was set after pow
-        pow_proof = block_to_check(return_pow_proof())
+        pow_proof = block_to_check.return_pow_proof()
         # print("pow_proof", pow_proof)
         # print("compute_hash", block_to_check.compute_hash())
         return pow_proof.startswith('0' * self.pow_difficulty) and pow_proof == block_to_check.compute_hash()
@@ -660,3 +660,114 @@ class Device:
         processing_time = (time.time() - processing_time) / self.computation_power
         
         return processing_time
+    
+    def add_to_round_end_time(self, time_to_add):
+        self.round_end_time += time_to_add
+    
+    def other_tasks_at_the_end_of_comm_round(self, this_comm_round, log_files_folder_path):
+        self.kick_out_slow_or_lazy_workers(this_comm_round, log_files_folder_path)
+    
+    def kick_out_slow_or_lazy_workers(self, this_comm_round, log_files_folder_path):
+        for device in self.peer_list:
+            if device.return_role() == 'worker':
+                if this_comm_round in self.active_worker_record_by_round.keys():
+                    if not device.return_idx() in self.active_worker_record_by_round[this_comm_round]:
+                        not_active_accumulator = 1
+                        # check if not active for the past (lazy_worker_knock_out_rounds - 1) rounds
+                        for comm_round_to_check in range(this_comm_round - self.lazy_worker_knock_out_rounds + 1, this_comm_round):
+                            if comm_round_to_check in self.active_worker_record_by_round.keys():
+                                if not device.return_idx() in self.active_worker_record_by_round[comm_round_to_check]:
+                                    not_active_accumulator += 1
+                        if not_active_accumulator == self.lazy_worker_knock_out_rounds:
+                            # kick out
+                            self.block_list.add(device.return_idx())
+                            msg = f'worker {device.return_idx()} has been regarded as lazy worker by {self.idx} in comm_round {this_comm_round}.\n'
+                            with open(f'{log_files_folder_path}/kicked_lazy_workers.txt', 'a') as file:
+                                file.write(msg)
+                else:
+                    # this may happen when a device is put into black list by every worker in a certain comm round
+                    pass
+    
+    def update_model_after_chain_resync(self, log_files_folder_path, conn, conn_cursor):
+        # reset global params to the initial weights of the net
+        self.global_parameters = copy.deepcopy(self.initial_net_parameters)
+        # in future version, develop efficient updating algorithm based on chain difference
+        for block in self.return_blockchain_object().return_chain_structure():
+            self.process_block(block, log_files_folder_path, conn, conn_cursor, when_resync= True)
+    
+    def return_pow_difficulty(self):
+        return self.pow_difficulty
+    
+    def register_in_the_network(self, check_online= False):
+        if self.aio:
+            self.add_peers(set(self.device_dict.values()))
+        else:
+            potential_registrars = set(self.device_dict.values())
+            # it cannot register with itself
+            potential_registrars.discard(self)
+            # pick a registrar
+            registrar = random.sample(potential_registrars, 1)[0]
+            if check_online:
+                if not registrar.is_online():
+                    online_registrar = set()
+                    for registrar in potential_registrars:
+                        if registrar.is_online():
+                            online_registrar.add(registrar)
+                    if not online_registrar:
+                        return False
+                    registrar = random.sample(online_registrar, 1)[0]
+            
+            # registrant add registrar to its peer list
+            self.add_peers(registrar)
+            # this device sucks in registrar's peer list
+            self.add_peers(registrar.return_peers())
+            # registrar adds registrant (must in this order, or registrant will add itself from registrar's peer list)
+            registrar.add_peers(self)
+            
+            return True
+    
+    ''' Worker '''
+    def malicious_worker_add_noise_to_weights(self, m):
+        with torch.no_grad():
+            if hasattr(m, 'weight'):
+                noise = self.noise_variance * torch.randn(m.weight.size())
+                variannce_of_noise = torch.var(noise)
+                m.weight.add_(noise.to(self.dev))
+                self.variance_of_noises.append(float(variannce_of_noise))
+    
+    # TODO change to computation power
+    def worker_local_update(self, rewards, log_files_folder_path_comm_round, comm_round, local_epochs= 1):
+        print(f"Worker {self.idx} is doing local_update with computation power {self.computation_power} and link speed {round(self.link_speed, 3)} bytes/s")
+        self.net.load_state_dict(self.global_parameters, strict= True)
+        self.local_update_time = time.time()
+        # local worker update by specified epochs
+        # usually, if validator acception time is specified, local_epochs should be 1
+        # logging maliciousness
+        is_malicious_node = "M" if self.return_is_malicious() else "B"
+        self.local_updates_rewards_per_transaction = 0
+        for epoch in range(local_epochs):
+            for data, label in self.train_dl:
+                data, label = data.to(self.dev), label.to(self.dev)
+                preds = self.net(data)
+                loss = self.loss_func(preds, label)
+                loss.backward()
+                self.opti.step()
+                self.opti.zero_grad()
+                self.local_updates_rewards_per_transaction += rewards * (label.shape[0])
+            # record accuracies to find good -vh
+            with open(f"{log_files_folder_path_comm_round}/worker_{self.idx}_{is_malicious_node}_local_updating_accuracies_comm_{comm_round}.txt", "a") as file:
+                file.write(f"{self.return_idx()} epoch_{epoch + 1} {self.return_role()} {is_malicious_node}: {self.validate_model_weights(self.net.state_dict())}\n")
+            self.local_total_epoch += 1
+        # local update done
+        try:
+            self.local_update_time = (time.time() - self.local_update_time) / self.computation_power
+        except:
+            self.local_update_time = float('inf')
+        if self.is_malicious:
+            self.net.apply(self.malicious_worker_add_noise_to_weights)
+            print(f"Malicious worker {self.idx} has added noise to its local updated weights before transmitting")
+            with open(f"{log_files_folder_path_comm_round}/comm_{comm_round}_variance_of_noises.txt", "a") as file:
+                file.write(f"{self.return_idx()} {self.return_role()} {is_malicious_node} noise variances: {self.variance_of_noises}\n")
+        # record accuracies to find good -vh
+        with open(f"") as file:
+            file.write()
