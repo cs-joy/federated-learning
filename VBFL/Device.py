@@ -888,4 +888,34 @@ class Device:
     
 
     ''' Miner '''
-    # TODO
+    def request_to_download(self, block_to_download, requesting_time_point):
+        print(f"Miner {self.idx} is requesting its associated devices to download the block it just added to its chain")
+        devices_in_association = self.miner_associated_validator_set.union(self.miner_associated_worker_set)
+        for device in devices_in_association:
+            # theoratically, one device is associated to a specific miner, so we don't have a miner_block_arrival_ques here
+            if self.online_switcher() and device.online_switcher():
+                miner_link_speed = self.return_link_speed()
+                device_link_speed = self.return_link_speed()
+                lower_link_speed = device_link_speed if device_link_speed < miner_link_speed else miner_link_speed
+                transmission_delay = getsizeof(str(block_to_download.__dict__)) / lower_link_speed
+                verified_block, verification_time = device.verify_block(block_to_download, block_to_download.return_mined_by())
+                if verified_block:
+                    # forgot to check for maliciousness of the block miner
+                    device.add_block(verified_block)
+                device.add_to_round_end_time(requesting_time_point + transmission_delay + verification_time)
+            else:
+                print(f"Unfortunately, either miner {self.idx} or {device.return_idx()} goes offline while processing this request-to-download block.")
+    
+    def propagated_the_block(self, propagating_time_point, block_to_propagate):
+        for peer in self.peer_list:
+            if peer.is_online():
+                if peer.return_role() == "miner":
+                    if not peer.return_idx() in self.black_list:
+                        print(f"{self.role} {self.idx} is propagating its mined block to {peer.return_role()} {peer.return_idx()}.")
+                        if peer.online_switcher():
+                            peer.accept_the_propagated_block(self, self.block_generation_time_point, block_to_propagate)
+                    else:
+                        print(f"Destination miner {peer.return_idx()} is in {self.role} {self.idx}'s black list. Propagating skipped for this dest miner.")
+    
+    def accept_the_propgated_block(self):
+        pass
