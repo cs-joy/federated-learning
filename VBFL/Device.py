@@ -816,3 +816,76 @@ class Device:
         local_updates_dict['worker_signature'] = self.sign_msg(sorted(local_updates_dict.items()))
 
         return local_updates_dict
+    
+    def worker_reset_vars_for_new_round(self):
+        self.received_block_from_miner = None
+        self.accuracy_this_round = float('-inf')
+        self.local_updates_rewards_per_transaction = 0
+        self.has_added_block = False
+        self.the_added_block = None
+        self.worker_associated_validator = None
+        self.worker_associated_miner = None
+        self.local_update_time = None
+        self.local_total_epoch = 0
+        self.variance_of_noises.clear()
+        self.round_end_time = 0
+    
+    def receive_block_form_miner(self, received_block, source_miner):
+        if not (received_block.return_mined_by() in self.black_list or source_miner in self.black_list):
+            self.received_block_from_miner = copy.deepcopy(received_block)
+            print(f"{self.role} {self.idx} has received a new block from {source_miner} mined by {received_block.return_mined_by()}.")
+        else:
+            print(f"Either the block sending miner {source_miner} or the miner {received_block.return_mined_by()} mined this block is in worker {self.idx}'s black list. Block is not accepted.")
+    
+    def toss_received_block(self):
+        self.receive_block_form_miner = None
+    
+    def return_received_block_from_miner(self):
+        return self.received_block_from_miner
+    
+    def validate_model_weights(self, weights_to_eval= None):
+        with torch.no_grad():
+            if weights_to_eval:
+                self.net.load_state_dict(weights_to_eval, strict= True)
+            else:
+                self.net.load_state_dict(self.global_parameters, strict= True)
+            sum_accu = 0
+            num = 0
+            for data, label in self.test_dl:
+                data, label = data.to(self.dev), label.to(self.dev)
+                preds = self.net(data)
+                preds = torch.argmax(preds, dim= 1)
+                sum_accu += (preds == label).float().mean()
+                num += 1
+            
+            return sum_accu / num
+    
+    def global_update(self, local_update_params_potentially_to_be_used):
+        # filter local params
+        local_params_by_benign_workers = []
+        for (worker_device_idx, local_params) in local_update_params_potentially_to_be_used:
+            if not worker_device_idx in self.black_list:
+                local_params_by_benign_workers.append(local_params)
+            else:
+                print(f"Global update skipped for a worker {worker_device_idx} in {self.idx}'s black list")
+        
+        if local_params_by_benign_workers:
+            # avg the gradients:
+            sum_paramsters = None
+            for local_updates_params in local_params_by_benign_workers:
+                if sum_paramsters is None:
+                    sum_paramsters = copy.deepcopy(local_updates_params)
+                else:
+                    for var in sum_paramsters:
+                        sum_paramsters[var] += local_updates_params[var]
+            # number of finally filtered worker's updates
+            num_participants = len(local_params_by_benign_workers)
+            for var in self.global_parameters:
+                self.global_parameters[var] = (sum_paramsters[var] / num_participants)
+            print(f"Global updates done by {self.idx}")
+        else:
+            print(f"Ther are no available local params for {self.idx} to perform global udpates in this comm round.")
+    
+
+    ''' Miner '''
+    # TODO
