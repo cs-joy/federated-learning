@@ -917,5 +917,60 @@ class Device:
                     else:
                         print(f"Destination miner {peer.return_idx()} is in {self.role} {self.idx}'s black list. Propagating skipped for this dest miner.")
     
-    def accept_the_propgated_block(self):
-        pass
+    def accept_the_propgated_block(self, source_miner, source_miner_propaating_time_point, propagated_block):
+        if not source_miner.return_idx() in self.black_list:
+            source_miner_link_speed = source_miner.return_link_speed()
+            this_miner_link_speed = self.link_speed
+            lower_link_speed = this_miner_link_speed if this_miner_link_speed < source_miner_link_speed else source_miner_link_speed
+            transmission_delay = getsizeof(str(propagated_block.__dict__)) / lower_link_speed
+            self.unordered_propagated_block_processing_queue[source_miner_propaating_time_point + transmission_delay] = propagated_block
+            print(f'{self.role} {self.idx} has acccepted a propagated block from miner {source_miner.return_idx()}')
+        else:
+            print(f'Source miner {source_miner.return_role()} {source_miner.return_idx()} is in {self.role} {self.idx}\'s black list. Propagated block not accepted.')
+    
+    def add_propagated_block_to_processing_queue(self, arrival_time, propagated_block):
+        self.unordered_propagated_block_processing_queue[arrival_time] = propagated_block
+    
+    def return_unordered_propagated_block_processing_queue(self):
+        return self.unordered_propagated_block_processing_queue
+    
+    def return_associated_validators(self):
+        return self.miner_associated_validator_set
+    
+    def return_miner_acception_wait_time(self):
+        return self.miner_acception_wait_time
+    
+    def return_miner_accepted_transactions_size_limit(self):
+        return self.miner_accepted_transactions_size_limit
+    
+    def return_miners_eligible_to_continue(self):
+        miners_set = set()
+        for peer in self.peer_list:
+            if peer.return_role() == 'miner':
+                miners_set.add(peer)
+        miners_set.add(self)
+
+        return miners_set
+    
+    def return_accepted_broadcasted_transactions(self):
+        return self.broadcasted_transactions
+    
+    def verify_validator_transaction(self, transaction_to_verify):
+        if self.computation_power == 0:
+            print(f'Miner {self.idx} has computation power 0 and will not be able to verify this transaction in time')
+
+            return False, None
+        else:
+            transaction_validator_idx = transaction_to_verify['validation_done_by']
+            if transaction_validator_idx in self.black_list:
+                print(f'{transaction_validator_idx} is in miner\'s blacklist. Transaction won\'t get verified.')
+                return False, None
+            verification_time = time.time()
+            if self.check_signature:
+                transaction_before_signed = copy.deepcopy(transaction_to_verify)
+                del transaction_before_signed['validator_signature']
+                modulus = transaction_to_verify['validator_rsa_pub_key']['modulus']
+                pub_key = transaction_to_verify['validator_rsa_pub_key']['pub_key']
+                signature = transaction_to_verify['validator_signature']
+                # begin verification
+                # TODO
