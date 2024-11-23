@@ -1056,4 +1056,29 @@ class Device:
         self.received_propagated_validator_block = None
     
     def miner_reset_vars_for_new_round(self):
-        pass # TODO clear the environments
+        self.miner_associated_worker_set.clear()
+        self.miner_associated_validator_set.clear()
+        self.unconfirmed_transactions.clear()
+        self.broadcasted_transactions.clear()
+        # self.unconfirmed_validatr_transactions.clear()
+        # self.validator_accepted_broadcasted_worker_transactions.clear()
+        self.mined_block = None
+        self.received_propagated_block = None
+        self.received_propagated_validator_block = None
+        self.has_added_block = False
+        self.the_added_block = None
+        self.unordered_arrival_time_accepted_validator_transactions.clear()
+        self.miner_accepted_broadcasted_validator_transactions.clear()
+        self.block_generation_time_point = None
+        # self.block_to_add = None
+        self.unordered_propagated_block_processing_queue.clear()
+        self.round_end_time = 0
+
+    def set_unordered_arrival_time_accepted_validator_transactions(self, unordered_arrival_time_accepted_validator_transactions):
+        self.unordered_arrival_time_accepted_validator_transactions = unordered_arrival_time_accepted_validator_transactions
+    
+    def return_unordered_arrival_time_accepted_validator_transactions(self):
+        return self.unordered_arrival_time_accepted_validator_transactions
+    
+    def miner_broadcast_validator_transactions(self):
+        pass # TODO #1051
