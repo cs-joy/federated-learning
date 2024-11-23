@@ -973,4 +973,87 @@ class Device:
                 pub_key = transaction_to_verify['validator_rsa_pub_key']['pub_key']
                 signature = transaction_to_verify['validator_signature']
                 # begin verification
-                # TODO
+                hash = int.from_bytes(sha256(str(sorted(transaction_before_signed.items())).encode('utf-8')).digest(), byteorder= 'big')
+                hashFromSignature = pow(signature, pub_key, modulus)
+                if hash == hashFromSignature:
+                    print(f"Signature of transaction from validator {transaction_validator_idx} is verified by {self.role} {self.idx}!")
+                    verification_time = (time.time() - verification_time) / self.computation_power
+
+                    return verification_time, True
+                else:
+                    print(f"Signature invalid. Transaction from valdator {transaction_validator_idx} is NOT verified.")
+                    
+                    return (time.time() - verification_time) / self.computation_power, False
+            else:
+                print(f"Signature of transaction from validator {transaction_validator_idx} is verified by {self.role} {self.idx}!")
+                verification_time = (time.time() - verification_time) / self.computation_power
+
+                return verification_time, True
+    
+    def sign_candidate_transaction(self, candidate_transaction):
+        signing_time = time.time()
+        candidate_transaction['miner_rsa_pub_key'] = self.return_rsa_pub_key()
+        if 'miner_signature' in candidate_transaction.keys():
+            del candidate_transaction['miner_signature']
+        candidate_transaction['miner_signature'] = self.sign_msg(sorted(candidate_transaction.items()))
+        signing_time = (time.time() - signing_time) / self.computation_power
+
+        return signing_time
+    
+    def mine_block(self, candidate_block, rewards, starting_nocne= 0):
+        candidate_block.set_mined_by(self.idx)
+        pow_mined_block = self.proof_of_work(candidate_block)
+        # pow_mined_block.set_mined_by(self.idx)
+        pow_mined_block.set_mining_rewards(rewards)
+
+        return pow_mined_block
+    
+    def proof_of_work(self, candidate_block, starting_nonce= 0):
+        candidate_block.set_mined_by(self.idx)
+        '''' Brute-Force the nonce '''
+        candidate_block.set_nonce(starting_nonce)
+        current_hash = candidate_block.compute_hash()
+        # candidate_block.set_pow_difficulty(self.pow_difficulty)
+        while not current_hash.startswith('0' * self.pow_difficulty):
+            candidate_block.nonce_increment()
+            current_hash = candidate_block.compute_hash()
+        # return the qualified hash as a PoW proof, to be verified by other devices before adding the block
+        # also set its hash as wel. block_hash is the same as pow proof
+        candidate_block.set_pow_proof(current_hash)
+
+        return candidate_block
+    
+    def set_block_generation_time_point(self, block_generation_time_point):
+        self.block_generation_time_point = block_generation_time_point
+    
+    def return_block_generation_time_point(self):
+        return self.block_generation_time_point
+    
+    def receive_propagated_block(self, received_propagated_block):
+        if not received_propagated_block.return_mined_by() in self.black_list:
+            self.received_block_from_miner = copy.deepcopy(received_propagated_block)
+            print(f"Miner {self.idx} has received propagated block from {received_propagated_block.return_mined_by()}.")
+        else:
+            print(f'Propagated block miner {received_propagated_block.return_mined_by()} is in miner {self.idx}\'s blacklist. Block not accepted.')
+    
+    def receive_propagated_validator_block(self, received_propagated_validator_block):
+        if not received_propagated_validator_block.return_mined_by() in self.black_list:
+            self.received_propagated_validator_block = copy.deepcopy(received_propagated_validator_block)
+            print(f"Miner {self.idx} has received a propagated validator block from {received_propagated_validator_block.return_mined_by()}.")
+        else:
+            print(f"Propagated validator block miner {received_propagated_validator_block.return_mined_by()} is in miner {self.idx}'s blacklist. Block not accepted.")
+    
+    def return_propagated_block(self):
+        return self.received_propagated_block
+    
+    def return_propagated_validator_block(self):
+        return self.received_propagated_validator_block
+    
+    def toss_propagated_block(self):
+        self.received_propagated_block = None
+    
+    def toss_propagated_validator_block(self):
+        self.received_propagated_validator_block = None
+    
+    def miner_reset_vars_for_new_round(self):
+        pass # TODO clear the environments
