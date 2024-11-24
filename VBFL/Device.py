@@ -1081,4 +1081,39 @@ class Device:
         return self.unordered_arrival_time_accepted_validator_transactions
     
     def miner_broadcast_validator_transactions(self):
-        pass # TODO #1051
+        for peer in self.peer_list:
+            if peer.is_online():
+                if peer.return_role == 'miner':
+                    if not peer.return_idx() in self.black_list:
+                        print(f'Miner {self.idx} is broadcasting received validator transactions to miner {peer.return_idx()}.')
+                        final_broadcasting_unordered_arrival_time_accepted_validator_transactions_for_dest_miner = copy.copy(self.unordered_arrival_time_accepted_validator_transactions)
+                        # offline situation similar in validator_broadcast_worker_transactions()
+                        for arrival_time, tx in self.unordered_arrival_time_accepted_validator_transactions.items():
+                            if not (self.online_switcher() and peer.online_switch()):
+                                del final_broadcasting_unordered_arrival_time_accepted_validator_transactions_for_dest_miner[arrival_time]
+                        peer.accept_miner_broadcasted_validator_transactions(self, final_broadcasting_unordered_arrival_time_accepted_validator_transactions_for_dest_miner)
+                        print(f'Miner {self.idx} has broadcasted {len(final_broadcasting_unordered_arrival_time_accepted_validator_transactions_for_dest_miner)} validator transactions to miner {self.return_idx()}.')
+                    else:
+                        print(f'Destination miner {peer.return_idx()} is in miner {self.idx()}\'s blacklist. broadcasting skipped for this dest miner.')
+    
+    def accept_miner_broadcasted_validator_transactions(self, source_device, unordered_transaction_arrival_queue_from_source_miner):
+        # discard malicious node
+        if not source_device.return_idx() in self.black_list:
+            self.miner_accepted_broadcasted_validator_transactions.append({'source_device_link_speed': source_device.return_link_speed(), 'broadcasted_transaction': copy.deepcopy(unordered_transaction_arrival_queue_from_source_miner)})
+            print(f'{self.role} {self.idx} has accepted validator transactions from {source_device.return_role()} {source_device.return_idx()}')
+        else:
+            print(f'Source miner {source_device.return_role()} {source_device.return_idx()} is in {self.role} {self.idx}\'s blacklist. Broadcasted transactions not accepted.')
+    
+    def return_accepted_broadcasted_validator_transactions(self):
+        return self.miner_accepted_broadcasted_validator_transactions
+    
+    def set_candidate_transactions_for_final_mining_queue(self, final_transactions_arrival_queue):
+        self.final_candidate_transactions_queue_to_mine = final_transactions_arrival_queue
+    
+    def return_final_candidate_transactions_mining_queue(self):
+        return self.final_candidate_transactions_queue_to_mine
+    
+
+    ''' Validator '''
+    def validator_reset_vars_for_new_round(self):
+        pass # TODO
