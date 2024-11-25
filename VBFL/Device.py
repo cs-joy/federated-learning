@@ -111,9 +111,9 @@ class Device:
         self.validator_associated_miner = None
         # when validator directly accepts worker's updates
         self.unordered_arrival_time_accepted_worker_transactions = {}
-        self.validator_accepted_broadcasted_worker_transaction = None or []
+        self.validator_accepted_broadcasted_worker_transactions = None or []
         self.final_transactions_queue_to_validate = {}
-        self.post_validation_transaction_queue = None or []
+        self.post_validation_transactions_queue = None or []
         self.validator_threshold = validator_threshold
         self.validator_local_accuracy = None
 
@@ -1116,4 +1116,82 @@ class Device:
 
     ''' Validator '''
     def validator_reset_vars_for_new_round(self):
-        pass # TODO
+        self.validation_rewwards_this_round = 0
+        # self.accuracies_this_round = {}
+        self.has_added_block = False
+        self.the_added_block = None
+        self.validator_associated_miner = None
+        self.validator_local_accuracy = None
+        self.validator_associated_worker_set.clear()
+        # self.post_validation_transactions.clear()
+        # self.broadcasted_post_validation_transactions.clear()
+        self.unordered_arrival_time_accepted_worker_transactions.clear()
+        self.final_transactions_queue_to_validate.clear()
+        self.validator_accepted_broadcasted_worker_transactions.clear()
+        self.post_validation_transactions_queue.clear()
+        self.round_end_time = 0
+    
+    def add_post_validation_transaction_to_queue(self, transaction_to_add):
+        self.post_validation_transactions_queue.append(transaction_to_add)
+    
+    def return_post_validation_transactions_queue(self):
+        return self.post_validation_transactions_queue
+    
+    def return_online_workers(self):
+        online_workers_in_peer_list = set()
+        for peer in self.peer_list:
+            if peer.is_online():
+                if peer.return_role() == 'worker':
+                    online_workers_in_peer_list.add(peer)
+        
+        return online_workers_in_peer_list
+    
+    def return_validations_and_signature(self, comm_round):
+        validation_transaction_dict = {'validator_device_idx': self.idx, 'round_num': comm_round, 'accuracies_this_round': copy.deepcopy(self.accuracies_this_round), 'validation_effort_rewards': self.validation_rewwards_this_round, 'rsa_pub_key': self.return_rsa_pub_key()}
+        validation_transaction_dict['signature'] = self.sign_msg(sorted(validation_transaction_dict.items()))
+
+        return validation_transaction_dict
+    
+    def add_worker_to_association(self, worker_device):
+        if not worker_device.return_idx() in self.black_list:
+            self.associated_worker_set.add(worker_device)
+        else:
+            print(f'WARNING: {worker_device.return_idx()} in validator {self.idx}\'s black list. Not added by the validator.')
+    
+    def associate_with_miner(self):
+        miners_in_peer_list = set()
+        for peer in self.peer_list:
+            if peer.return_role() == 'miner':
+                if not peer.return_idx() in self.black_list:
+                    miners_in_peer_list.add(peer)
+        if not miners_in_peer_list:
+            return False
+        self.validator_associated_miner = random.sample(miners_in_peer_list, 1)[0]
+
+        return self.validator_associated_miner
+    
+    ''' Miner and Validator '''
+    def add_device_to_association(self, to_add_device):
+        if not to_add_device.return_idx() in self.black_list:
+            vars(self)[f'{self.role}_associated_{to_add_device.return_role()}_set'].add(to_add_device)
+        else:
+            print(f'WARNING: {to_add_device.return_idx()} in {self.role} {self.idx}\'s black list. Not added by the {self.role}.')
+    
+    def return_associated_workers(self):
+        return vars(self)[f'{self.role}_associated_worker_set']
+    
+    def sign_block(self, block_to_sign):
+        block_to_sign.set_signature(self.sign_msg(block_to_sign.__dict__))
+    
+    def add_unconfirmed_transactions(self, unconfirmed_transaction, source_device_idx):
+        if not source_device_idx in self.black_list:
+            self.unconfirmed_transactions.append(copy.deepcopy(unconfirmed_transaction))
+            print(f'{source_device_idx}\'s transaction has been recorded by {self.role} {self.idx}')
+        else:
+            print(f'Source device {source_device_idx} is in the black list of {self.role} {self.idx}. Transaction has not been recorded.')
+    
+    def return_unconfirmed_transactions(self):
+        return self.unconfirmed_transactions
+
+    # TODO more functions...
+        
