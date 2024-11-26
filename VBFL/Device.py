@@ -1193,5 +1193,23 @@ class Device:
     def return_unconfirmed_transactions(self):
         return self.unconfirmed_transactions
 
-    # TODO more functions...
-        
+    def broadcast_transactions(self):
+        for peer in self.peer_list:
+            if peer.is_online():
+                if peer.return_role() == self.role:
+                    if not peer.return_idx() in self.black_list:
+                        print(f'{self.role} {self.idx} is broadcasting transactions to {peer.return_role()} {peer.return_idx()}.')
+                        peer.accept_broadcasted_transactions(self, self.unconfirmed_transactions)
+                    else:
+                        print(f'Destination {peer.return_role()} is in {self.role} {self.idx}\'s black_list. Broadcasting skipped.')
+    
+    def accept_broadcasted_transactions(self, source_device, broadcasted_transactions):
+        # discard malicious node
+        if not source_device.return_idx() in self.black_list:
+            self.broadcast_transactions.append(copy.deepcopy(broadcasted_transactions))
+            print(f'{self.role} {self.idx} has accepted transactions from {source_device.return_role()} {source_device.return_idx()}')
+        else:
+            print(f'Source {source_device.return_role()} {source_device.return_idx()} is in {self.role} {self.idx}\'s black_list. Transaction not accepted.')
+    
+    ''' Worker and Validator '''
+    # TODO
