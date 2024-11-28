@@ -1212,4 +1212,40 @@ class Device:
             print(f'Source {source_device.return_role()} {source_device.return_idx()} is in {self.role} {self.idx}\'s black_list. Transaction not accepted.')
     
     ''' Worker and Validator '''
-    # TODO
+    def set_mined_block(self, mined_block):
+        self.mined_block = mined_block
+    
+    def return_mined_block(self):
+        return self.mine_block
+    
+    def associate_with_device(self, to_associate_device_role):
+        to_associate_device = vars(self)[f'{self.role}_associated_{to_associate_device_role}']
+        shuffled_peer_list = list(self.peer_list)
+        random.shuffle(shuffled_peer_list)
+        for peer in shuffled_peer_list:
+            # select the first found eligible device from a shuffled order
+            if peer.return_role() == to_associate_device_role and peer.is_online():
+                if not peer.return_idx() in self.black_list:
+                    to_associate_device = peer
+        
+        if not to_associate_device:
+            # there is no device matching that required associated role in this device's peer list
+            return False
+        
+        print(f'{self.role} {self.idx} associated with {to_associate_device.return_role} {to_associate_device.return_idx()}')
+
+        return to_associate_device
+    
+    ''' Validator '''
+    def set_unordered_arrival_time_accepted_worker_transactions(self, unordered_transaction_arrival_queue):
+        self.unordered_arrival_time_accepted_worker_transactions = unordered_transaction_arrival_queue
+    
+    def return_unordered_arrival_time_accepted_worker_transactions(self):
+        return self.unordered_arrival_time_accepted_worker_transactions
+    
+    def validator_broadcast_worker_transactions(self):
+        for peer in self.peer_list:
+            if peer.is_online():
+                if peer.return_role() == 'validator':
+                    if not peer.return_idx() in self.black_list:
+                        print(f'Validator {self.idx} is broadcasting received validator')
