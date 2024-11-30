@@ -1249,3 +1249,10 @@ class Device:
                 if peer.return_role() == 'validator':
                     if not peer.return_idx() in self.black_list:
                         print(f'Validator {self.idx} is broadcasting received validator')
+                        final_broadcasting_unordered_arrival_time_accepted_worker_transactions_for_dest_validator = copy.copy(self.unordered_arrival_time_accepted_worker_transactions)
+                        # if offline, it's like the broadcasted transaction was not received, so skip a transaction
+                        for arrival_time, tx in self.unordered_arrival_time_accepted_worker_transactions.items():
+                            if not (self.online_switcher() and peer.online_switcher()):
+                                del final_broadcasting_unordered_arrival_time_accepted_worker_transactions_for_dest_validator[arrival_time]
+                        # in the real distributed system, it should be broadcasting transaction one by one. Here we send the all received transactions(while online) and later calculate the order for the individual broadcasting transaction's arrival time mixed with the transactions itself received
+                        # TODO
