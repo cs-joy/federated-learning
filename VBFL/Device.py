@@ -1116,7 +1116,7 @@ class Device:
 
     ''' Validator '''
     def validator_reset_vars_for_new_round(self):
-        self.validation_rewwards_this_round = 0
+        self.validation_rewards_this_round = 0
         # self.accuracies_this_round = {}
         self.has_added_block = False
         self.the_added_block = None
@@ -1255,4 +1255,63 @@ class Device:
                             if not (self.online_switcher() and peer.online_switcher()):
                                 del final_broadcasting_unordered_arrival_time_accepted_worker_transactions_for_dest_validator[arrival_time]
                         # in the real distributed system, it should be broadcasting transaction one by one. Here we send the all received transactions(while online) and later calculate the order for the individual broadcasting transaction's arrival time mixed with the transactions itself received
-                        # TODO
+                        peer.accept_validator_broadcasted_worker_transactions(self, final_broadcasting_unordered_arrival_time_accepted_worker_transactions_for_dest_validator)
+                        print(f'Validator {self.idx} has broadcasted {len(final_broadcasting_unordered_arrival_time_accepted_worker_transactions_for_dest_validator)} worker transactions to validator {peer.return_idx()}')
+                    else:
+                        print(f'Destination validator {peer.return_idx()} is in this validator {self.idx}\' black_list. Broadcasting skipped for this dest validator.')
+    
+    def accept_validator_broadcasted_worker_transactions(self, source_validator, unordered_transaction_arrival_queue_from_source_validator):
+        if not source_validator.return_idx() in self.black_list:
+            self.validator_accepted_broadcasted_worker_transactions.append({'source_link_speed': source_validator.return_link_speed(), 'broadcasted_transactions': copy.deepcopy(unordered_transaction_arrival_queue_from_source_validator)})
+            print(f'Validator {self.idx} has accepted worker transactions frm validator {source_validator.return_idx()}')
+
+        else:
+            print(f' Source validator {source_validator.return_idx()} is in validator {self.idx}\'s black_list. Broadcasted transactions not accepted.')
+    
+    def return_accepted_broadcasted_worker_transactions(self):
+        return self.validator_accepted_broadcasted_worker_transactions
+    
+    def set_transaction_for_final_validating_queue(self, final_transactions_arrival_queue):
+        final_transactions_queue_to_validate = final_transactions_arrival_queue
+    
+    def return_final_transactions_validating_queue(self):
+        return self.final_transactions_queue_to_validate
+    
+    def validator_update_model_by_one_epoch_and_validate_local_accuracy(self, opti):
+        # return time spent
+        print(f'Validtor {self.idx} is performing one epoch of local update and validation.')
+        if self.computation_power == 0:
+            print(f'Validator {self.idx} has computation power 0 and will not be able to complete this validation.')
+            return float('inf')
+        else:
+            updated_net = copy.deepcopy(self.net)
+            currently_used_lr = 0.01
+            for param_group in self.opti.param_groups:
+                currently_used_lr = param_group['lr']
+            # by default use SGD. Did not implement others
+            if opti == 'SGD':
+                validation_opti = optim.SGD(updated_net.parameters(), lr= currently_used_lr)
+            local_validation_time = time.time()
+            for data, label in self.train_dl:
+                data, label = data.to(self.dev), label.to(self.dev)
+                preds = updated_net(data)
+                loss = self.loss_func(preds, label)
+                loss.backward()
+                validation_opti.step()
+                validation_opti.zero_grad()
+            # validate by local test set
+            with torch.no_grad():
+                sum_accu = 0
+                num = 0
+                for data, label in self.test_dl:
+                    data, label = data.to(self.dev), label.to(self.dev)
+                    preds = updated_net(data)
+                    preds = torch.argmax(preds, dim= 1)
+                    sum_accu += (preds == label).float().mean()
+                    num += 1
+            self.validator_local_accuracy = sum_accu / num
+            print(f'Validator {self.idx} local updated model has accuracy {self.validator_local_accuracy} on it\'s local test set')
+
+            return (time.time() - local_validation_time) / self.computation_power
+    
+    # TODO validator_threshold
