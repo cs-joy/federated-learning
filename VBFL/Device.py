@@ -1315,3 +1315,47 @@ class Device:
             return (time.time() - local_validation_time) / self.computation_power
     
     # TODO validator_threshold
+    def validate_worker_transaction(self, transaction_to_validate, rewards, log_files_folder_path, comm_round, malicious_validator_on):
+        log_files_folder_path_comm_round = f'{log_files_folder_path}/comm_{comm_round}'
+        if self.computation_power == 0:
+            print(f'Validator {self.idx} has computation power 0 and will not be able to validate this transaction in time.')
+            return False, False
+        else:
+            worker_transaction_device_idx = transaction_to_validate['worker_device_idx']
+            if worker_transaction_device_idx in self.black_list:
+                print(f'{worker_transaction_device_idx} is in validator\'s black_list. Transaction won\'t get validated.')
+                return False, False
+            validation_time = time.time()
+            if self.check_signature:
+                transaction_before_signed = copy.deepcopy(transaction_to_validate)
+                del transaction_before_signed['worker_signature']
+                modulus = transaction_to_validate['worker_rsa_pub_key']['modulus']
+                pub_key = transaction_to_validate['worker_rsa_pub_key']['pub_key']
+                signature = transaction_to_validate['worker_signature']
+                # begin verification
+                # 1 - verify signature
+                hash = int.from_bytes(sha256(str(sorted(transaction_before_signed.items())).encode('utf-8')).digest(), byteorder= 'big')
+                hashFromSignature = pow(signature, pub_key, modulus)
+                if hash == hashFromSignature:
+                    print(f'Signature of transaction from worker {worker_transaction_device_idx} is verified by validator {self.idx}!')
+                    transaction_to_validate['worker_signature_valid'] = True
+                else:
+                    print(f'Signature invalid. Transaction from worker {worker_transaction_device_idx} does NOT pass verification.')
+                    # will also add sig not verified transaction due to the validator's verification effort and its rewards needs ti be recorded in the block
+                    transaction_to_validate['worker_signature_valid'] = False
+            else:
+                print(f'Signature of transaction from worker {worker_transaction_device_idx} is verified by validator {self.idx}!')
+                transaction_to_validate['worker_signature_valid'] = True
+            # 2 - validate worker's local_updates_params if worker's signature is valid
+            if transaction_to_validate['worker_signature_valid']:
+                # accuracy validated by worker's update
+                accuracy_by_worker_update_using_own_data = self.validate_model_weights(transaction_to_validate['local_updates_params'])
+                # if worker's accuracy larger or lower but the difference falls within the validator threshold value, meaning worker's update model favors validator's dataset, so their updates are in the same direction - True, otherwise False. We do not consider the accuracy gap so far, meaning if worker's update is way too good, it is still fine
+                print(f'Validator updated model accuracy - {self.validator_local_accuracy}')
+                print(f'After applying worker\'s update, model accuracy becomes - {accuracy_by_worker_update_using_own_data}')
+                # record their accuracies and difference for choossing a good validator threshold
+                is_malicious_validator = "M" if self.is_malicious else "B"
+                with open(f'{log_files_folder_path_comm_round}/validator_{self.idx}_{is_malicious_validator}_validation_records_comm_{comm_round}.txt', 'a') as file:
+                    is_malicious_node = "M" if self.device_dict[worker_transaction_device_idx].return_is_malicious() else "B"
+                    file.write(f'{accuracy_by_worker_update_using_own_data - self.validator_local_accuracy}: validator {self.return_idx()} {is_malicious_validator} in round {comm_round} evaluating worker {worker_transaction_device_idx}, diff= v_acc: {self.validator_local_accuracy} - w_acc: {accuracy_by_worker_update_using_own_data} {worker_transaction_device_idx}_maliciousness: {is_malicious_node}\n')
+                # TODO more...
