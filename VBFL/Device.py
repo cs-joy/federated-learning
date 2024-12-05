@@ -784,7 +784,7 @@ class Device:
         else:
             validation_net = copy.deepcopy(self.net)
             currently_used_lr = 0.01
-            if param_group in self.opti.param_groups:
+            for param_group in self.opti.param_groups:
                 currently_used_lr = param_group['lr']
             # by default use SGD. Did not implement others
             if opti == 'SGD':
@@ -1358,4 +1358,76 @@ class Device:
                 with open(f'{log_files_folder_path_comm_round}/validator_{self.idx}_{is_malicious_validator}_validation_records_comm_{comm_round}.txt', 'a') as file:
                     is_malicious_node = "M" if self.device_dict[worker_transaction_device_idx].return_is_malicious() else "B"
                     file.write(f'{accuracy_by_worker_update_using_own_data - self.validator_local_accuracy}: validator {self.return_idx()} {is_malicious_validator} in round {comm_round} evaluating worker {worker_transaction_device_idx}, diff= v_acc: {self.validator_local_accuracy} - w_acc: {accuracy_by_worker_update_using_own_data} {worker_transaction_device_idx}_maliciousness: {is_malicious_node}\n')
-                # TODO more...
+                if accuracy_by_worker_update_using_own_data - self.validator_local_accuracy < self.validator_threshold * -1:
+                    transaction_to_validate['update_direction'] = False
+                    print(f'NOTE: worker {worker_transaction_device_idx}\'s updates is deemed as suspiciously malicious by validator {self.idx}')
+                    # is it right?
+                    if not self.device_dict[worker_transaction_device_idx].return_is_malicious():
+                        print(f'Warning - {worker_transaction_device_idx} is malicious and this validation is wrong.')
+                        # for experiments
+                        with open(f'{log_files_folder_path}/false_positive_malicious_nodes_inside_slipped.txt', 'a') as file:
+                            file.write(f'{self.validator_local_accuracy - accuracy_by_worker_update_using_own_data} = current_validator_accuracy {self.validator_local_accuracy} - accuracy_by_worker_update_using_own_data {accuracy_by_worker_update_using_own_data}, by validator {self.idx} on worker {worker_transaction_device_idx} in round {comm_round}\n')
+                    else:
+                        with open(f'{log_files_folder_path}/true_positive_good_nodes_inside_correct.txt', 'a') as file:
+                            file.write(f'{self.validator_local_accuracy - accuracy_by_worker_update_using_own_data} = current_validator_accuracy {self.validator_local_accuracy} - accuracy_by_worker_update_using_own_data {accuracy_by_worker_update_using_own_data}, by validator {self.idx} on worker {worker_transaction_device_idx} in round {comm_round}\n')
+                
+                else:
+                    transaction_to_validate['update_direction'] = True
+                    print(f'Worker {worker_transaction_device_idx}\'s updates is deemed as GOOD by validator {self.idx}')
+                    # is it right?
+                    if self.device_dict[worker_transaction_device_idx].return_is_malicious():
+                        print(f'Warning - {worker_transaction_device_idx} is malicious and this validation is wrong.')
+                        # for experiments
+                        with open(f'{log_files_folder_path}/false_positive_malicious_nodes_inside_slipped.txt', 'a') as file:
+                            file.write(f'{self.validator_local_accuracy - accuracy_by_worker_update_using_own_data} = current_validator_accuracy {self.validator_local_accuracy} - accuracy_by_worker_update_using_own_data {accuracy_by_worker_update_using_own_data}, by validator {self.idx} on worker {worker_transaction_device_idx} in round {comm_round}\n')
+                    else:
+                        with open(f'{log_files_folder_path}/true_positive_good_nodes_inside_correct.txt', 'a') as file:
+                            file.write(f'{self.validator_local_accuracy - accuracy_by_worker_update_using_own_data} = current_validator_accuracy {self.validator_local_accuracy} - accuracy_by_worker_update_using_own_data {accuracy_by_worker_update_using_own_data}, by validator {self.idx} on worker {worker_transaction_device_idx} in round {comm_round}\n')
+                
+                if self.is_malicious and malicious_validator_on:
+                    old_voting = transaction_to_validate['update_direction']
+                    transaction_to_validate['update_direction'] = not transaction_to_validate['update_direction']
+                    with open(f'{log_files_folder_path}/malicious_validator_log.txt', 'a') as file:
+                        file.write(f'Malicious validator {self.idx} as flipped the voting of worker {worker_transaction_device_idx} from {old_voting} to {transaction_to_validate['update_direction']} in round {comm_round}\n')
+                transaction_to_validate['validation_rewards'] = rewards
+            else:
+                transaction_to_validate['update_direction'] = 'N/A'
+                transaction_to_validate['validation_rewards'] = 0
+            transaction_to_validate['validation_done_by'] = self.idx
+            validation_time = (time.time() - validation_time)/self.computation_power
+            transaction_to_validate['validation_time'] = validation_time
+            transaction_to_validate['validator_rsa_pub_key'] = self.return_rsa_pub_key()
+            # assume signing done in negligible time
+            transaction_to_validate['validator_signature'] = self.sign_msg(sorted(transaction_to_validate.items()))
+
+            return validation_time, transaction_to_validate
+
+
+class DeviceInNetwork(object):
+    def __init__(self, 
+        data_set_name, 
+        is_iid, 
+        batch_size, 
+        learning_rate, 
+        loss_func, 
+        opti, 
+        num_devices, 
+        network_stability, 
+        net, dev, 
+        knock_out_rounds, 
+        lazy_worker_knock_out_rounds, 
+        shard_test_data, 
+        miner_acception_wait_time, 
+        miner_accepted_transactions_size_limit, 
+        validator_threshold, 
+        pow_difficulty, 
+        even_link_speed_strength, 
+        base_data_transmission_speed, 
+        even_computation_power, 
+        malicious_updates_discount, 
+        num_malicious, noise_varinace, 
+        check_signature, 
+        not_resync_chain
+    ):
+        self.data_set_name = data_set_name
+        # TODO
