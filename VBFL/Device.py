@@ -1430,4 +1430,55 @@ class DeviceInNetwork(object):
         not_resync_chain
     ):
         self.data_set_name = data_set_name
-        # TODO
+        self.is_iid = is_iid
+        self.batch_size = batch_size
+        self.learning_rate = learning_rate
+        self.loss_func = loss_func
+        self.opti = opti
+        self.num_devices = num_devices
+        self.net = net
+        self.dev = dev
+        self.devices_set = {}
+        self.knock_out_rounds = knock_out_rounds
+        self.lazy_worker_knock_out_rounds = lazy_worker_knock_out_rounds
+        # self.test_data_loader = None
+        self.default_network_stability = network_stability
+        self.shard_test_data = shard_test_data
+        self.even_link_speed_strength = even_link_speed_strength
+        self.base_data_transmission_speed = base_data_transmission_speed
+        self.even_computation_power = even_computation_power
+        self.num_malicious = num_malicious
+        self.malicious_updates_discount = malicious_updates_discount
+        self.noise_variance = noise_varinace
+        self.check_signature = check_signature
+        self.not_resync_chain = not_resync_chain
+        # distribute dataset
+        ''' validator '''
+        self.validator_threshold = validator_threshold
+        ''' miner '''
+        self.miner_acception_wait_time = miner_acception_wait_time
+        self.miner_accepted_transactions_size_limit = miner_accepted_transactions_size_limit
+        self.pow_difficulty = pow_difficulty
+        ''' shard '''
+        self.data_set_balanced_allocation()
+    
+    # distribute the dataset evenly to the devices
+    def data_set_balanced_allocation(self):
+        # read dataset
+        mnist_dataset = DatasetLoad(self.data_set_name, self.is_iid)
+
+        # prepare training data
+        train_data = mnist_dataset.train_data
+        train_label = mnist_dataset.train_label
+        # shard dataset and distribute among devices
+        # shard train
+        shard_size_train = mnist_dataset.train_data_size // self.num_devices // 2
+        shard_id_train = np.random.permutation(mnist_dataset.train_data_size // shard_size_train)
+
+        # prepare test data
+        if not self.shard_test_data:
+            test_data = torch.tensor(mnist_dataset.test_data)
+            test_label = torch.argmax(torch.tensor(mnist_dataset.test_label), dim= 1)
+            test_data_loader = DataLoader(TensorDataset(test_data, test_label), batch_size= 100, shuffle= False)
+
+            # TODO
