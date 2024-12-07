@@ -1473,7 +1473,7 @@ class DeviceInNetwork(object):
         # shard dataset and distribute among devices
         # shard train
         shard_size_train = mnist_dataset.train_data_size // self.num_devices // 2
-        shard_id_train = np.random.permutation(mnist_dataset.train_data_size // shard_size_train)
+        shards_id_train = np.random.permutation(mnist_dataset.train_data_size // shard_size_train)
 
         # prepare test data
         if not self.shard_test_data:
@@ -1481,4 +1481,50 @@ class DeviceInNetwork(object):
             test_label = torch.argmax(torch.tensor(mnist_dataset.test_label), dim= 1)
             test_data_loader = DataLoader(TensorDataset(test_data, test_label), batch_size= 100, shuffle= False)
 
-            # TODO
+        else:
+            test_data = mnist_dataset.test_data
+            test_label = mnist_dataset.test_label
+            # shard test
+            shard_size_test =mnist_dataset.test_data_size // self.num_devices // 2
+            shards_id_test = np.random.permutation(mnist_dataset.test_data_size // shard_size_test)
+
+        malicious_nodes_set = []
+        if self.num_malicious:
+            malicious_nodes_set = random.sample(range(self.num_devices), self.num_malicious)
+        
+        for i in range(self.num_devices):
+            is_malicious = False
+            # make it more random by introducing two shards
+            shards_id_train1 = shards_id_train[i * 2]
+            shards_id_train2 = shards_id_train[i * 2 + 1]
+            # distribute training data
+            data_shards1 = train_data[shards_id_train1 * shard_size_train: shards_id_train1 * shard_size_train + shard_size_train]
+            data_shards2 = train_data[shards_id_train2 * shard_size_train: shards_id_train2 * shard_size_train + shard_size_train]
+            label_shards1 = train_label[shards_id_train1 * shard_size_train: shards_id_train1 * shard_size_train + shard_size_train]
+            label_shards2 = train_label[shards_id_train2 * shard_size_train: shards_id_train2 * shard_size_train + shard_size_train]
+            local_train_data, local_train_label = np.vstack((data_shards1, data_shards2)), np.vstack((data_shards1, data_shards2))
+            local_train_label = np.argmax(local_train_label, axis= 1)
+
+            # distribute test data
+            if self.shard_test_data:
+                shards_id_test1 = shards_id_test[i * 2]
+                shards_id_test2 = shards_id_test[i * 2 + 1]
+                data_shards1 = test_data[shards_id_test1 * shard_size_test: shards_id_test1 * shard_size_test + shard_size_test]
+                data_shards2 = test_data[shards_id_test2 * shard_size_test: shards_id_test2 * shard_size_test + shard_size_test]
+                label_shards1 = test_label[shards_id_test1 * shard_size_test: shards_id_test1 * shard_size_test + shard_size_test]
+                label_shards2 = test_label[shards_id_test2 * shard_size_test: shards_id_test2 * shard_size_test + shard_size_test]
+                local_test_data, local_test_label = np.vstack((data_shards1, data_shards2)), np.vstack((label_shards1, label_shards2))
+                local_test_label = torch.argmax(torch.tensor(local_test_label), dim= 1)
+                test_data_loader = DataLoader(TensorDataset(torch.tensor(local_test_data), torch.tensor(local_test_label)), batch_size= 100, shuffle= False)
+            
+            # assign data to a device and put in the devices set
+            if i in malicious_nodes_set:
+                is_malicious = True
+                # add Gaussian Noise
+            
+            device_idx = f'device_{i+1}'
+            a_device = Device(device_idx, TensorDataset(torch.tensor(local_train_data),torch.tensor(local_train_label)), test_data_loader, self.batch_size, self.learning_rate, self.loss_func, self.opti, self.default_network_stability, self.net, self.dev, self.miner_acception_wait_time, self.miner_accepted_transactions_size_limit, self.validator_threshold, self.pow_difficulty, self.even_link_speed_strength, self.base_data_transmission_speed, self.even_computation_power, is_malicious, self.noise_variance, self.check_signature, self.not_resync_chain, self.malicious_updates_discount, self.knock_out_rounds, self.lazy_worker_knock_out_rounds)
+            # device index starts from 1
+            self.devices_set[device_idx] = a_device
+            print(f'Sharding dataset to {device_idx} done.')
+        print(f'Sharding dataset done!')
