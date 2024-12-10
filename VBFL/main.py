@@ -50,3 +50,13 @@ NETWORK_SNAPSHOTS_BASE_FOLDER = 'snapshots'
 parser = argparse.ArgumentParser(formatter_class= argparse.ArgumentDefaultsHelpFormatter, description= 'Block_FedAvg_Simulation')
 
 # debug attributes
+parser.add_argument('-g', '--gpu', type=str, default='0', help= 'gpu id to use (e.g. 0, 1, 2, 3)')
+parser.add_argument('-v', '--verbose', type= int, default= 1, help= 'print verbose debug log')
+parser.add_argument('-sn', '--save_network_snapshots', type=int, default=0, help= 'only save network_snapshots if this is set to 1; will create a folder with date in the snapshots folder')
+parser.add_argument('-dtx', '--destory_tx_in_block', type= int, default= 0, help= 'currently transactions stored in the blocks are occupying GPU ram and have not figured out a way to move them to CPU ram or harddisk, so turn it on to save GPU ram in order for PoS to run 100+ rounds. NOT GOOD if there needs to perform chain resyncing.')
+parser.add_argument('-rp', '--resume_path', type= str, default= None, help='resume from the path of saved network_snapshots; only provide the date')
+parser.add_argument('-sf', '--save_freq', type= int, default= 5, help='save frequency of the network_snapshots')
+parser.add_argument('-sm', '--save_most_recent', type=int, default= 2, help= 'in case of saving space, keep only the recent specified number of snapshots; 0 means keep all')
+
+
+# FL attributes
